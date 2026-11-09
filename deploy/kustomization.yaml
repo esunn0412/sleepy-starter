@@ -8,6 +8,7 @@ resources:
   - deployment.yaml
   - service.yaml
   - httproute.yaml
+  - seats.yaml
 images:
   - name: app
     newName: ghcr.io/esunn0412/sleepy-starter
