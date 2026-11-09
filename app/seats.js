@@ -278,4 +278,32 @@ async function roomStats() {
   return { rooms: list, pending, attendees: pods.length };
 }
 
-module.exports = { ensureRooms, setSeats, swapTalks, requestSeat, cancelSeat, seatStatus, roomStats, attendeePod };
+// Seated attendees not yet counted in the time-to-seat metric. Each is claimed with a
+// label write guarded by resourceVersion, so with several app replicas exactly one
+// replica (the one whose write succeeds) reports it. Re-created Pods (talk swap) keep
+// the label, so they aren't counted twice.
+async function claimNewlySeated() {
+  const pods = (await api('GET', `/api/v1/namespaces/${NS}/pods?labelSelector=!conf.io/recorded&fieldSelector=spec.nodeName!=`)).items;
+  const now = Date.now();
+  const claimed = [];
+  for (const p of pods) {
+    try {
+      await api('PATCH', `/api/v1/namespaces/${NS}/pods/${p.metadata.name}`,
+        { metadata: { resourceVersion: p.metadata.resourceVersion, labels: { 'conf.io/recorded': 'true' } } },
+        'application/merge-patch+json');
+    } catch (e) {
+      if (e.status === 409 || e.status === 404) continue; // another replica got it, or it left
+      throw e;
+    }
+    const node = p.spec.nodeName;
+    claimed.push({
+      seconds: Math.max(0, (now - Date.parse(requestedAt(p))) / 1000),
+      room: node.replace(/^room-/, '').replace(/-access$/, ''),
+      pool: node.endsWith('-access') ? 'accessible' : 'general',
+      mustSee: !!p.metadata.labels['conf.io/must-see'],
+    });
+  }
+  return claimed;
+}
+
+module.exports = { claimNewlySeated, ensureRooms, setSeats, swapTalks, requestSeat, cancelSeat, seatStatus, roomStats, attendeePod };

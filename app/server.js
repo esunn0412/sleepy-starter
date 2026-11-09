@@ -3,7 +3,9 @@
 // Keep listening on $PORT and keep /healthz and /readyz.
 const http = require('node:http');
 const crypto = require('node:crypto');
+const { trace } = require('@opentelemetry/api');
 const seats = require('./seats');
+const metrics = require('./metrics');
 const { slot, talks, rooms } = require('./slot');
 const { attendeePage, organizerPage } = require('./pages');
 
@@ -94,8 +96,22 @@ function parsePrefs(body) {
   return { interests, mustSee, needs };
 }
 
+// Low-cardinality route names for spans (ids replaced by placeholders).
+function routeName(p) {
+  return p.replace(/^\/api\/attendees\/[0-9a-f]{10}$/, '/api/attendees/:id')
+    .replace(/^\/api\/rooms\/[a-z0-9-]+\/seats$/, '/api/rooms/:room/seats');
+}
+
 async function route(req, res, url) {
   const p = url.pathname;
+  const span = trace.getActiveSpan();
+  if (span) {
+    const r = routeName(p);
+    span.setAttribute('http.route', r);
+    span.updateName(`${req.method} ${r}`);
+    const id = p.match(/^\/api\/attendees\/([0-9a-f]{10})$/);
+    if (id) span.setAttribute('kubeseat.attendee.id', id[1]);
+  }
   if (p === '/healthz' || p === '/readyz') return send(res, 200, 'ok\n', 'text/plain');
   if (p === '/' && req.method === 'GET') return send(res, 200, attendeePage({ version, slot, talks }), 'text/html; charset=utf-8');
   if (p === '/organizer/login' && req.method === 'POST') {
@@ -119,7 +135,9 @@ async function route(req, res, url) {
   if (p === '/api/attendees' && req.method === 'POST') {
     const prefs = parsePrefs(await readJson(req));
     const id = crypto.randomBytes(5).toString('hex');
+    span?.setAttribute('kubeseat.attendee.id', id);
     await seats.requestSeat(id, prefs);
+    metrics.recordRequest(prefs);
     return send(res, 201, { id });
   }
   let m = p.match(/^\/api\/attendees\/([0-9a-f]{10})$/);
@@ -129,6 +147,7 @@ async function route(req, res, url) {
   }
   if (m && req.method === 'DELETE') {
     await seats.cancelSeat(m[1]);
+    metrics.recordRelease();
     return send(res, 200, { released: true });
   }
 
@@ -170,6 +189,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(port, () => {
   console.log(`listening on :${port}, version ${version}`);
   seed();
+  metrics.start();
 });
 
 // Exit cleanly when Kubernetes stops the pod, so rollouts don't drop requests.
