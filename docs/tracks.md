@@ -24,7 +24,9 @@ reason ("Room full, you're #4 on the waitlist"), access needs are guaranteed, an
 | --- | --- | --- |
 | App deployed via Argo CD, driven through Radar MCP (`apply_resource`, `manage_gitops`, `wait_for`) | ✅ | Application `app` Synced/Healthy at `fa207b8`; URL showed `version 1ee2e69` |
 | Checks "before" recorded | ✅ | `STORY.md` (4 medium findings on `app`) |
-| Seat cluster pod (KWOK apiserver + scheduler) running in the vcluster | 🟨 | PR #2 |
+| Seat cluster pod (KWOK apiserver + scheduler) running in the vcluster | ✅ | PR #2 merged; control plane started in 1.4 s (Radar `get_workload_logs`); Argo CD Synced at `dd48072` |
+| App live and seeding rooms into the seat cluster | ✅ | PR #4 merged; image `26ba868`; logs "seat cluster seeded: 4 rooms" on both pods |
+| Real issue found live: attendee Pods refused (no `default` ServiceAccount, no controller-manager in the seat pod) | 🟨 | Fix in PR #5; candidate for the Radar AI investigation |
 | Checks "after": fix the 4 findings (PDB, topology spread, read-only rootfs, SA token) | ⬜ | |
 | One AI investigation on a real issue | ⬜ | |
 | Prometheus / `top_resources` view of the seat pod under load | ⬜ | |
@@ -64,7 +66,8 @@ reason ("Room full, you're #4 on the waitlist"), access needs are guaranteed, an
 | Item | Status | Evidence |
 | --- | --- | --- |
 | Custom rules in `.gitar/review/kubeseat.md` (seat model, privacy, secrets, budget) | 🟨 | PR #1 |
-| Every feature lands through a Gitar-reviewed PR | 🟨 | PR #1, #2, #3, #4 |
+| Every feature lands through a Gitar-reviewed PR | 🟨 | PR #1–#5 |
+| Gitar caught 2 more real issues on PR #4 | ✅ | swap left seated people in the wrong talk (and could break step-free needs); organizer endpoints had no auth → fixed in `d09bf00`, Gitar: Approved, 2 closed / 2 findings |
 | A Gitar comment that caught something real (and the fix) | ✅ | PR #2: seat apiserver is unauthenticated HTTP reachable cluster-wide → added NetworkPolicy (commit `51befc9`), Gitar re-reviewed: Approved |
 | CI failure diagnosis / auto-apply used once | ⬜ | |
 
@@ -90,6 +93,11 @@ reason ("Room full, you're #4 on the waitlist"), access needs are guaranteed, an
 
 Time is America/Denver. One line each: what, where to see it.
 
+- 13:45 · PR #5: fix reproduced locally with `kwokctl --disable-kube-controller-manager` (before: every seat waiting; after: 16/16)
+- 13:37 · **Real live issue**: first attendee on https://sleepy.cnh.radarhq.io refused — seat cluster has no `default` ServiceAccount (and new Nodes keep a `not-ready` taint) because no controller-manager runs in the seat pod
+- 13:36 · PR #4 live: `26ba868`, 4 rooms seeded, organizer swap without key → 401
+- 13:30 · Gitar approved PR #4 after fixing its 2 findings (swap re-seating, organizer auth)
+- 13:27 · PR #2 merged; seat control plane up in the vcluster in 1.4 s — biggest risk retired
 - 13:24 · PR #4 opened: app seats attendees via the real scheduler; 9/9 end-to-end checks pass on a local kwokctl cluster · github.com/esunn0412/sleepy-starter/pull/4
 - 13:22 · Gitar approved PR #2 after the fix
 - 13:18 · **Gitar caught a real issue** on PR #2 (unauthenticated seat apiserver, no NetworkPolicy) → fixed in `51befc9`
