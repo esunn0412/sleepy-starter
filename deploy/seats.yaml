@@ -61,3 +61,22 @@ spec:
     - name: kube-api
       port: 8080
       targetPort: kube-api
+---
+# The seat apiserver is plain HTTP with no auth (KWOK's insecure port): only the
+# app's pods may reach it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: seats
+spec:
+  podSelector:
+    matchLabels:
+      app: seats
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: app
+      ports:
+        - port: 8080
