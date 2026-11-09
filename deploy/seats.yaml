@@ -1,0 +1,63 @@
+# The seat cluster: a private, throwaway Kubernetes control plane (etcd, kube-apiserver,
+# kube-scheduler, KWOK) in one pod. Rooms are its fake Nodes and attendees are its Pods,
+# so attendee Pods never reach the vcluster or the host cluster. Only the app talks to it,
+# inside the namespace, on port 8080.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seats
+  labels:
+    app: seats
+spec:
+  replicas: 1
+  # Its state is disposable (the app re-seeds rooms on start), so replace it, never run two.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: seats
+  template:
+    metadata:
+      labels:
+        app: seats
+    spec:
+      containers:
+        - name: seats
+          image: registry.k8s.io/kwok/cluster:v0.8.0-k8s.v1.34.8
+          ports:
+            - name: kube-api
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "1500m"
+              memory: 2Gi
+          startupProbe:
+            tcpSocket:
+              port: kube-api
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            tcpSocket:
+              port: kube-api
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seats
+  labels:
+    app: seats
+spec:
+  selector:
+    app: seats
+  ports:
+    - name: kube-api
+      port: 8080
+      targetPort: kube-api
