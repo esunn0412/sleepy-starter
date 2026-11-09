@@ -15,7 +15,7 @@ button.secondary{background:transparent;color:var(--accent)}
 .ok{color:var(--ok)}.warn{color:var(--warn)}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
 .bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:4px;min-width:80px}.bar>i{display:block;height:100%;background:var(--accent)}
-.bar.full>i{background:var(--warn)}footer{margin-top:32px;color:var(--muted);font-size:13px}
+.bar.full>i{background:var(--warn)}.clicker{display:flex;gap:6px;margin-top:6px}.clicker button{padding:6px 12px;min-width:44px}ol.options{padding-left:20px}ol.options li{margin:10px 0}footer{margin-top:32px;color:var(--muted);font-size:13px}
 `;
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -84,6 +84,8 @@ const talks = ${JSON.stringify(Object.fromEntries(talks.map((t) => [t.id, t.titl
 const roomNames = ${JSON.stringify(Object.fromEntries(rooms.map((r) => [r.id, r.name])))};
 const f = document.getElementById('f'), out = document.getElementById('seat');
 let id = null, timer = null, podOpen = false;
+const whyOf = {}; // talk id -> reason from the last scoring
+const h = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const scoreBtn = document.getElementById('score');
 if (scoreBtn) scoreBtn.onclick = async () => {
   const d = new FormData(f), msg = document.getElementById('scoreMsg');
@@ -97,6 +99,7 @@ if (scoreBtn) scoreBtn.onclick = async () => {
     if (slider) slider.value = x.weight;
     const why = document.getElementById('why-' + x.talk);
     if (why) why.textContent = (x.weight ? 'Weight ' + x.weight + ': ' : 'Not in your top 3: ') + x.why;
+    whyOf[x.talk] = x.why;
   }
   msg.textContent = 'Done. These weights go into your Pod. Adjust them if you like.' + (s.githubUsed ? ' (GitHub repos included.)' : '');
 };
@@ -117,14 +120,27 @@ async function poll() {
   out.hidden = false;
   if (!r.ok) { out.textContent = 'No seat request.'; return; }
   const s = await r.json();
-  if (s.state === 'seated') {
-    out.innerHTML = '<h2 class="ok">Seated: ' + (roomNames[s.room] || 'Room ' + s.room) + '</h2><p>' + (talks[s.talk] || s.talk) + '</p>' +
-      (s.accessibleSeat ? '<p>Accessible seat held for you.</p>' : '') + '<button class="secondary" id="cancel">I can\\'t make it</button>';
+  // Live options: where to go now, and two backups that still have space at the door.
+  const fill = (o) => '<div class="bar' + (o.full ? ' full' : '') + '"><i style="width:' + Math.min(100, Math.round(100 * o.door / Math.max(1, o.capacity))) + '%"></i></div>' +
+    '<span class="meta">' + o.door + ' / ' + o.capacity + ' in the room' + (o.full ? ' · full' : '') + '</span>';
+  const opt = (o, label) => '<li><strong>' + label + ':</strong> ' + h(talks[o.talk] || o.talk) + '<br><span class="meta">' + h(roomNames[o.room] || o.room) + '</span>' +
+    (whyOf[o.talk] ? '<br><span class="meta">' + h(whyOf[o.talk]) + '</span>' : '') + fill(o) + '</li>';
+  const opts = (s.options || []);
+  let head;
+  if (s.state === 'seated' && s.roomFull && opts.length) {
+    head = '<h2 class="warn">' + h(roomNames[s.room] || s.room) + ' just filled up at the door</h2><p>Head to your backup instead:</p>';
+  } else if (s.state === 'seated') {
+    head = '<h2 class="ok">Go to ' + h(roomNames[s.room] || 'Room ' + s.room) + '</h2><p>' + h(talks[s.talk] || s.talk) + '</p>' +
+      (s.accessibleSeat ? '<p>Accessible seat held for you.</p>' : '');
   } else {
-    out.innerHTML = '<h2 class="warn">Waiting</h2><p>' + s.reason + '</p>' +
-      (s.waitlistPosition ? '<p>Waitlist position: #' + s.waitlistPosition + '</p>' : '') + '<button class="secondary" id="cancel">Leave the waitlist</button>';
-    timer = setTimeout(poll, 2000);
+    head = '<h2 class="warn">Your first choice is full</h2><p>' + h(s.reason) + '</p>' +
+      (s.waitlistPosition ? '<p>Waitlist position: #' + s.waitlistPosition + '. Meanwhile:</p>' : '');
   }
+  const list = (s.state === 'seated' && s.roomFull ? opts.filter((o) => o.room !== s.room) : opts);
+  out.innerHTML = head + (list.length ? '<ol class="options">' + list.map((o, i) =>
+    opt(o, i === 0 && s.state === 'seated' && !s.roomFull ? 'Go' : 'Backup ' + (s.state === 'seated' && !s.roomFull ? i : i + 1))).join('') + '</ol>' : '') +
+    '<button class="secondary" id="cancel">I can\\'t make it</button>';
+  timer = setTimeout(poll, 3000);
   const podBox = document.createElement('details');
   podBox.innerHTML = '<summary>Show me as a Pod</summary><pre style="overflow:auto;font-size:13px"></pre>';
   const showPod = async () => { podBox.querySelector('pre').textContent = await (await fetch('/api/attendees/' + id + '/pod')).text(); };
@@ -133,7 +149,7 @@ async function poll() {
   if (podOpen) { podBox.open = true; showPod(); }
   document.getElementById('cancel').onclick = async () => {
     await fetch('/api/attendees/' + id, { method: 'DELETE' }); clearTimeout(timer); id = null;
-    out.textContent = 'Seat released. It goes to the next person on the waitlist.';
+    out.textContent = 'Released. Your spot goes to someone else.';
   };
 }
 </script>`;
@@ -147,7 +163,8 @@ function organizerPage({ version, slot, talks, rooms = [], note }) {
 <h1>kubeseat · organizer</h1><p class="sub">KubeCon NA 2026 · ${esc(when(slot.startsAt))} · seats update live.</p>
 ${sourceNote(note)}
 <p id="summary" aria-live="polite"></p>
-<table><thead><tr><th>Room</th><th>Talk</th><th>General</th><th>Accessible</th><th>Waitlist</th><th>Seats</th></tr></thead><tbody id="rows"></tbody></table>
+<p class="meta">At the door: tap +1 as people walk in (−1 as they leave). That live count is what the scheduler sees: a room full at the door gets no new recommendations, and attendees are sent to their backups.</p>
+<div style="overflow-x:auto"><table><thead><tr><th>Room</th><th>Talk</th><th>At the door (live)</th><th>Recommended by kubeseat</th><th>Accessible</th><th>Capacity</th></tr></thead><tbody id="rows"></tbody></table></div>
 <div class="card"><form id="swap"><strong>Move a talk to another room</strong><br>
   <label>Room <select name="a" id="sa"></select></label> ⇄ <label>Room <select name="b" id="sb"></select></label>
   <button>Swap talks</button></form></div>
@@ -156,18 +173,28 @@ const titles = ${JSON.stringify(titles)};
 const roomNames = ${JSON.stringify(roomNames)};
 const bar = (p) => '<span>' + p.used + ' / ' + p.seats + '</span><div class="bar' + (p.used >= p.seats ? ' full' : '') +
   '"><i style="width:' + (p.seats ? Math.min(100, 100 * p.used / p.seats) : 0) + '%"></i></div>';
-let filled = false;
+let filled = false, loadTimer = null;
 async function load() {
   // Don't redraw while an organizer is typing a seat count.
-  if (document.activeElement && document.activeElement.closest('#rows')) return setTimeout(load, 2000);
+  if (document.activeElement && document.activeElement.matches('#rows input')) return setTimeout(load, 2000);
   const r = await fetch('/api/rooms');
   if (!r.ok) { document.getElementById('summary').textContent = 'Seat service unavailable.'; return setTimeout(load, 3000); }
   const d = await r.json();
   document.getElementById('summary').textContent = d.attendees + ' attendees, ' + d.pending + ' waiting for a seat.';
   document.getElementById('rows').innerHTML = d.rooms.map((x) =>
     '<tr><td>' + (roomNames[x.room] || x.room) + (x.stepFree ? ' <span title="step-free">♿</span>' : '') + (x.captions ? ' <span title="captions">CC</span>' : '') + '</td>' +
-    '<td>' + (titles[x.talk] || x.talk) + '</td><td>' + bar(x.general) + '</td><td>' + bar(x.accessible) + '</td><td>' + x.waitlist + '</td>' +
-    '<td><form data-room="' + x.room + '"><label class="meta">General <input type="number" min="0" max="5000" value="' + x.general.seats + '" style="width:5em"></label> <button class="secondary">Set</button></form></td></tr>').join('');
+    '<td>' + (titles[x.talk] || x.talk) + '</td>' +
+    '<td class="door">' + bar({ used: x.door, seats: x.capacity }) +
+      '<div class="clicker"><button class="secondary" data-room="' + x.room + '" data-d="-1" aria-label="one left ' + x.room + '">−1</button>' +
+      '<button data-room="' + x.room + '" data-d="1" aria-label="one in ' + x.room + '">+1</button>' +
+      '<button class="secondary" data-room="' + x.room + '" data-d="10" aria-label="ten in ' + x.room + '">+10</button></div></td>' +
+    '<td>' + bar(x.general) + (x.waitlist ? '<div class="meta">' + x.waitlist + ' waiting</div>' : '') + '</td><td>' + bar(x.accessible) + '</td>' +
+    '<td><form data-room="' + x.room + '"><input type="number" min="0" max="5000" value="' + x.capacity + '" style="width:5em" aria-label="capacity"> <button class="secondary">Set</button></form></td></tr>').join('');
+  document.querySelectorAll('#rows .clicker button').forEach((b) => b.onclick = async () => {
+    await fetch('/api/rooms/' + b.dataset.room + '/door', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ delta: Number(b.dataset.d) }) });
+    clearTimeout(loadTimer); load();
+  });
   document.querySelectorAll('#rows form').forEach((f) => f.onsubmit = async (e) => {
     e.preventDefault();
     await fetch('/api/rooms/' + f.dataset.room + '/seats', { method: 'POST', headers: { 'content-type': 'application/json' },
@@ -178,7 +205,7 @@ async function load() {
     const opts = d.rooms.map((x) => '<option value="' + x.room + '">' + (roomNames[x.room] || x.room) + '</option>').join('');
     document.getElementById('sa').innerHTML = opts; document.getElementById('sb').innerHTML = opts; filled = true;
   }
-  setTimeout(load, 2000);
+  loadTimer = setTimeout(load, 2000);
 }
 document.getElementById('swap').onsubmit = async (e) => {
   e.preventDefault();

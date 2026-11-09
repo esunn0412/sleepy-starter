@@ -7,6 +7,9 @@
 // kubeseat.attendees.waiting  gauge: attendees not seated yet (Pending Pods).
 // kubeseat.seats.used         gauge: seats taken, by room and pool.
 // kubeseat.seats.capacity     gauge: seats, by room and pool.
+// kubeseat.room.occupancy     gauge: people in the room per the door clicker, by room.
+// kubeseat.room.fill          gauge: door count / capacity (1.0 = full), by room.
+// kubeseat.door.updates       counter: door clicker taps, by room.
 //
 // Attributes never carry personal data: rooms, pools and talk ids only.
 
@@ -36,6 +39,15 @@ meter.createObservableGauge('kubeseat.seats.used', { description: 'Seats taken' 
       r.observe(room.accessible.used, { 'kubeseat.room': room.room, 'kubeseat.pool': 'accessible', 'kubeseat.talk': room.talk });
     }
   });
+meter.createObservableGauge('kubeseat.room.occupancy', { description: 'People in the room, from the door clicker' })
+  .addCallback((r) => {
+    for (const room of stats?.rooms || []) r.observe(room.door || 0, { 'kubeseat.room': room.room, 'kubeseat.talk': room.talk });
+  });
+meter.createObservableGauge('kubeseat.room.fill', { description: 'Door count / room capacity (1 = full)' })
+  .addCallback((r) => {
+    for (const room of stats?.rooms || []) if (room.capacity) r.observe(room.door / room.capacity, { 'kubeseat.room': room.room, 'kubeseat.talk': room.talk });
+  });
+const doorUpdates = meter.createCounter('kubeseat.door.updates', { description: 'Door clicker taps' });
 meter.createObservableGauge('kubeseat.seats.capacity', { description: 'Seats in the room' })
   .addCallback((r) => {
     for (const room of stats?.rooms || []) {
@@ -50,6 +62,10 @@ function recordRequest(prefs) {
     'kubeseat.must_see': !!prefs.mustSee,
     'kubeseat.access_need': !!(n.stepFree || n.captions || n.accessibleSeat),
   });
+}
+
+function recordDoor(room) {
+  doorUpdates.add(1, { 'kubeseat.room': room });
 }
 
 function recordRelease() {
@@ -104,4 +120,4 @@ function start() {
   pollStats();
 }
 
-module.exports = { start, stop, recordRequest, recordRelease };
+module.exports = { start, stop, recordRequest, recordRelease, recordDoor };

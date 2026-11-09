@@ -103,7 +103,7 @@ function parsePrefs(body) {
 // Low-cardinality route names for spans (ids replaced by placeholders).
 function routeName(p) {
   return p.replace(/^\/api\/attendees\/[0-9a-f]{10}(\/pod)?$/, '/api/attendees/:id$1')
-    .replace(/^\/api\/rooms\/[a-z0-9-]+\/seats$/, '/api/rooms/:room/seats');
+    .replace(/^\/api\/rooms\/[a-z0-9-]+\/(seats|door)$/, '/api/rooms/:room/$1');
 }
 
 async function route(req, res, url) {
@@ -185,6 +185,18 @@ async function route(req, res, url) {
     if (!(n >= 0 && n <= 5000)) return send(res, 400, { error: 'seats must be 0-5000' });
     await seats.setSeats(m[1], pool, n);
     return send(res, 200, { room: m[1], pool, seats: n });
+  }
+  // Door clicker (organizer-only, like every POST under /api/rooms/): {delta: +1/-1/+10} or {count: N}.
+  m = p.match(/^\/api\/rooms\/([a-z0-9-]+)\/door$/);
+  if (m && req.method === 'POST' && roomIds.has(m[1])) {
+    const body = await readJson(req);
+    const delta = Math.round(Number(body.delta));
+    const count = body.count === undefined ? undefined : Math.round(Number(body.count));
+    if (count === undefined && !(Math.abs(delta) >= 1 && Math.abs(delta) <= 100)) return send(res, 400, { error: 'delta must be ±1..100' });
+    if (count !== undefined && !(count >= 0 && count <= 100000)) return send(res, 400, { error: 'count must be 0-100000' });
+    const door = await seats.countDoor(m[1], { delta, count });
+    metrics.recordDoor(m[1], door);
+    return send(res, 200, { room: m[1], door });
   }
   if (p === '/api/swap' && req.method === 'POST') {
     const { a, b } = await readJson(req);
