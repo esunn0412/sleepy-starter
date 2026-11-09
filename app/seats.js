@@ -21,6 +21,7 @@ async function api(method, path, body, contentType = 'application/json') {
   if (!res.ok) {
     const err = new Error(`${method} ${path}: ${res.status} ${data && data.message}`);
     err.status = res.status;
+    err.upstream = true; // seat-cluster detail: log it, never send it to the browser
     throw err;
   }
   return data;
@@ -59,6 +60,15 @@ function roomNode(name, room, talk, seats, pool) {
 // Each room is two Nodes: general seats, and a tainted pool of accessible seats
 // that only people who need them can use.
 async function ensureRooms(rooms) {
+  // The in-pod seat cluster runs no ServiceAccount controller, and the apiserver's
+  // ServiceAccount admission refuses Pods until `default` exists. Create it ourselves.
+  try {
+    await api('POST', `/api/v1/namespaces/${NS}/serviceaccounts`, {
+      apiVersion: 'v1', kind: 'ServiceAccount', metadata: { name: 'default' }, automountServiceAccountToken: false,
+    });
+  } catch (e) {
+    if (e.status !== 409) throw e;
+  }
   for (const room of rooms) {
     const general = roomNode(`room-${room.id}`, room, room.talk, room.seats - room.accessibleSeats, 'general');
     const access = roomNode(`room-${room.id}-access`, room, room.talk, room.accessibleSeats, 'accessible');
@@ -68,6 +78,11 @@ async function ensureRooms(rooms) {
       } catch (e) {
         if (e.status !== 409) throw e; // already there from an earlier start
       }
+      // TaintNodesByCondition admission adds node.kubernetes.io/not-ready to every new
+      // Node, and only the controller-manager (absent in the seat pod) removes it. Set
+      // exactly the taints the room should have.
+      await api('PATCH', `/api/v1/nodes/${node.metadata.name}`,
+        { spec: { taints: node.spec.taints || [] } }, 'application/merge-patch+json');
     }
   }
 }
