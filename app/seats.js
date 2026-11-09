@@ -118,20 +118,40 @@ async function swapTalks(roomA, roomB) {
   }
 
   const seated = (await api('GET', `/api/v1/namespaces/${NS}/pods`)).items
-    .filter((p) => swapped.has(p.spec.nodeName))
+    .filter((p) => live(p) && swapped.has(p.spec.nodeName))
     .sort((x, y) => requestedAt(x).localeCompare(requestedAt(y)));
   for (const p of seated) {
     await api('DELETE', `/api/v1/namespaces/${NS}/pods/${p.metadata.name}?gracePeriodSeconds=0`);
     const { nodeName, ...spec } = p.spec;
+    // A NEW name, never the old one: KWOK finishes the old Pod's deletion by name a
+    // moment later, and with a reused name it deleted the re-created Pod instead
+    // (8 of 1,000 attendees lost their seat in the first load test).
     await api('POST', `/api/v1/namespaces/${NS}/pods`, {
       apiVersion: 'v1',
       kind: 'Pod',
-      metadata: { name: p.metadata.name, labels: p.metadata.labels, annotations: p.metadata.annotations },
+      metadata: { name: podName(p.metadata.labels['conf.io/attendee']), labels: p.metadata.labels, annotations: p.metadata.annotations },
       spec,
     });
   }
   console.log(`talks swapped rooms=${roomA},${roomB} reseated=${seated.length}`);
   return { reseated: seated.length };
+}
+
+// Every Pod an attendee ever gets has a unique name; the attendee is found by the
+// conf.io/attendee label. Names are never reused (see swapTalks).
+let podSeq = 0;
+function podName(id) {
+  podSeq = (podSeq + 1) % 1296;
+  return `a-${id}-${Date.now().toString(36)}${podSeq.toString(36).padStart(2, '0')}`;
+}
+
+const live = (p) => !p.metadata.deletionTimestamp;
+
+// The attendee's current Pod (newest live one), or null.
+async function findPod(id) {
+  const pods = (await api('GET', `/api/v1/namespaces/${NS}/pods?labelSelector=conf.io/attendee=${id}`)).items.filter(live);
+  pods.sort((a, b) => b.metadata.creationTimestamp.localeCompare(a.metadata.creationTimestamp) || b.metadata.name.localeCompare(a.metadata.name));
+  return pods[0] || null;
 }
 
 // creationTimestamp is per-second; the request annotation has milliseconds.
@@ -169,7 +189,7 @@ function attendeePod(id, { interests = [], mustSee = null, needs = {} }) {
     apiVersion: 'v1',
     kind: 'Pod',
     metadata: {
-      name: `a-${id}`,
+      name: podName(id),
       labels: { 'conf.io/attendee': id, ...(mustSee ? { 'conf.io/must-see': mustSee } : {}) },
       annotations: { 'conf.io/requested-at': new Date().toISOString() },
     },
@@ -193,11 +213,8 @@ async function requestSeat(id, prefs) {
 }
 
 async function cancelSeat(id) {
-  try {
-    await api('DELETE', `/api/v1/namespaces/${NS}/pods/a-${id}?gracePeriodSeconds=0`);
-  } catch (e) {
-    if (e.status !== 404) throw e;
-  }
+  // Every Pod of this attendee (normally one).
+  await api('DELETE', `/api/v1/namespaces/${NS}/pods?labelSelector=conf.io/attendee=${id}&gracePeriodSeconds=0`);
   console.log(`seat released attendee=${id}`);
 }
 
@@ -215,13 +232,8 @@ function explain(pod, needs = {}) {
 }
 
 async function seatStatus(id) {
-  let pod;
-  try {
-    pod = await api('GET', `/api/v1/namespaces/${NS}/pods/a-${id}`);
-  } catch (e) {
-    if (e.status === 404) return null;
-    throw e;
-  }
+  const pod = await findPod(id);
+  if (!pod) return null;
   const node = pod.spec.nodeName;
   if (node) {
     const n = await api('GET', `/api/v1/nodes/${node}`);
@@ -239,7 +251,7 @@ async function seatStatus(id) {
   const out = { state: 'waiting', reason: explain(pod, needs) };
   const mustSee = pod.metadata.labels['conf.io/must-see'];
   if (mustSee) {
-    const waiting = (await api('GET', `/api/v1/namespaces/${NS}/pods?labelSelector=conf.io/must-see=${encodeURIComponent(mustSee)}&fieldSelector=spec.nodeName=`)).items;
+    const waiting = (await api('GET', `/api/v1/namespaces/${NS}/pods?labelSelector=conf.io/must-see=${encodeURIComponent(mustSee)}&fieldSelector=spec.nodeName=`)).items.filter(live);
     waiting.sort((a, b) => requestedAt(a).localeCompare(requestedAt(b)));
     out.waitlistPosition = waiting.findIndex((p) => p.metadata.name === pod.metadata.name) + 1;
   }
@@ -249,7 +261,7 @@ async function seatStatus(id) {
 // Organizer view: per room, seats used/total in each pool and who is waiting for it.
 async function roomStats() {
   const nodes = (await api('GET', '/api/v1/nodes?labelSelector=conf.io/room')).items;
-  const pods = (await api('GET', `/api/v1/namespaces/${NS}/pods`)).items;
+  const pods = (await api('GET', `/api/v1/namespaces/${NS}/pods`)).items.filter(live);
   const used = {};
   let pending = 0;
   const waitingFor = {};
@@ -310,13 +322,8 @@ async function claimNewlySeated(onSeated, since = 0) {
 
 // The attendee's Pod, trimmed to what explains the seat: request, affinity, result.
 async function getPod(id) {
-  let p;
-  try {
-    p = await api('GET', `/api/v1/namespaces/${NS}/pods/a-${id}`);
-  } catch (e) {
-    if (e.status === 404) return null;
-    throw e;
-  }
+  const p = await findPod(id);
+  if (!p) return null;
   const sched = (p.status?.conditions || []).find((c) => c.type === 'PodScheduled');
   return {
     apiVersion: 'v1',
