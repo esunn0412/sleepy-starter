@@ -71,7 +71,7 @@ reason ("Room full, you're #4 on the waitlist"), access needs are guaranteed, an
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| Custom rules in `.gitar/review/kubeseat.md` (seat model, privacy, secrets, budget) | ✅ | PR #1 merged; Gitar itself refined a rule (resource rule scoped to `deploy/`, attendee Pods exempt) |
+| Custom rules in `.gitar/rules/` (seat-model, privacy, secrets, manifests, telemetry) | 🟨 | Were in `.gitar/review/` with no frontmatter, so Gitar reported "No rules evaluated" on every PR; moved to `.gitar/rules/*.md` with frontmatter (PR #12). Gitar had refined the resource rule on #1 |
 | Every feature lands through a Gitar-reviewed PR | ✅ | PR #1–#7, all Gitar-approved before merge |
 | **11 real findings, all fixed** | ✅ | #1: 2 · #2: 1 (unauthenticated seat apiserver → NetworkPolicy) · #4: 2 (swap broke seating/step-free; organizer endpoints open) · #6: 4 (telemetry sample loss, SLO spike, shutdown flush) · #7: 2 (attendee ids in span names; GitHub token not wired) |
 | Gitar caught 2 more real issues on PR #4 | ✅ | swap left seated people in the wrong talk (and could break step-free needs); organizer endpoints had no auth → fixed in `d09bf00`, Gitar: Approved, 2 closed / 2 findings |

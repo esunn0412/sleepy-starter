@@ -17,7 +17,7 @@ kube-scheduler seats real KubeCon attendees into talks. Rooms are nodes, attende
 - **Elasticsearch**: core data layer. Hybrid search scores each person against each talk; those scores ARE the scheduler's preferences.
 - **Dash0**: OpenTelemetry traces/metrics/logs. Metrics: time-to-seat, pending count, seat use. SLO e.g. "95% seated within 5 s". Use Agent0 or Dash0 MCP to find something real. Dashboard/SLO is a bonus.
 - **Radar**: app runs on the team cluster; use Radar UI + MCP all day; at least one AI investigation on a REAL issue. Radar judges ask teams NOT to break things on purpose.
-- **Gitar (Sonar)**: every feature lands through a Gitar-reviewed PR; custom rules in `.gitar/review/`; CI failure diagnosis + auto-apply.
+- **Gitar (Sonar)**: every feature lands through a Gitar-reviewed PR; custom rules in `.gitar/rules/` (one file per rule, YAML frontmatter); CI failure diagnosis + auto-apply.
 - **Merge Forward**: accessibility (step-free, captions, low-sensory) as hard constraints; protected accessible-seat pool; plain-English explanations for first-timers.
 
 ## Kubernetes model
@@ -122,7 +122,7 @@ Solo, so scope tight. Deadline 5:30 PM.
 5. 4:45-5:30 Radar story, record the 3-minute video, SUBMIT on wemakedevs before 5:30.
 Cut line: if seating isn't end-to-end by 4:00, drop organizer view and stretch goals.
 
-## Gitar review rules (commit as `.gitar/review/kubeseat.md`)
+## Gitar review rules (in `.gitar/rules/*.md`: seat-model, privacy, secrets, manifests, telemetry)
 
 - Every attendee Pod requests exactly 1 `conf.io/seat`.
 - Preferred affinity weights are integers 1-100 (scale Elastic scores).
