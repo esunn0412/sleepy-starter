@@ -63,6 +63,14 @@ spec:
                   name: app-credentials
                   key: elastic-api-key
                   optional: true
+            # Optional GitHub token: without it, lookups share the venue IP's
+            # 60 requests/hour and scoring falls back to the bio alone.
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: app-credentials
+                  key: github-token
+                  optional: true
             - name: POD_NAME
               valueFrom:
                 fieldRef:

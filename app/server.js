@@ -101,7 +101,7 @@ function parsePrefs(body) {
 
 // Low-cardinality route names for spans (ids replaced by placeholders).
 function routeName(p) {
-  return p.replace(/^\/api\/attendees\/[0-9a-f]{10}$/, '/api/attendees/:id')
+  return p.replace(/^\/api\/attendees\/[0-9a-f]{10}(\/pod)?$/, '/api/attendees/:id$1')
     .replace(/^\/api\/rooms\/[a-z0-9-]+\/seats$/, '/api/rooms/:room/seats');
 }
 
@@ -112,7 +112,7 @@ async function route(req, res, url) {
     const r = routeName(p);
     span.setAttribute('http.route', r);
     span.updateName(`${req.method} ${r}`);
-    const id = p.match(/^\/api\/attendees\/([0-9a-f]{10})$/);
+    const id = p.match(/^\/api\/attendees\/([0-9a-f]{10})(?:\/pod)?$/);
     if (id) span.setAttribute('kubeseat.attendee.id', id[1]);
   }
   if (p === '/healthz' || p === '/readyz') return send(res, 200, 'ok\n', 'text/plain');
