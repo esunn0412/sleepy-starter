@@ -55,13 +55,21 @@ function recordRelease() {
   releases.add(1);
 }
 
+// Same check as telemetry.js: claims only make sense while the SDK is exporting,
+// otherwise a claimed seat's sample would go to a no-op meter and be lost for good.
+const exporting = (process.env.OTEL_EXPORTER_OTLP_ENDPOINT || '').startsWith('http');
+
+// Seats taken before this replica started measuring are claimed without a sample.
+// (PodScheduled times have 1 s resolution, hence the second of slack.)
+const measuringSince = Date.now() - 1000;
+
 // Every second: record time-to-seat for newly seated attendees, exactly once across
 // app replicas (the replica whose label write wins records it).
 async function pollSeated() {
   try {
-    for (const s of await seats.claimNewlySeated()) {
+    await seats.claimNewlySeated((s) => {
       timeToSeat.record(s.seconds, { 'kubeseat.room': s.room, 'kubeseat.pool': s.pool, 'kubeseat.must_see': s.mustSee });
-    }
+    }, measuringSince);
   } catch (e) {
     if (!e.upstream && !e.name?.includes('Timeout')) console.log(`metrics: ${e.message}`);
   }
@@ -78,6 +86,7 @@ async function pollStats() {
 }
 
 function start() {
+  if (!exporting) return;
   pollSeated();
   pollStats();
 }

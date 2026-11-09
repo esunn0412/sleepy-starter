@@ -193,4 +193,9 @@ server.listen(port, () => {
 });
 
 // Exit cleanly when Kubernetes stops the pod, so rollouts don't drop requests.
-process.on('SIGTERM', () => server.close(() => process.exit(0)));
+// Flush the last telemetry batch first (telemetry.js is already loaded via --require;
+// this returns the same module).
+process.on('SIGTERM', () => server.close(async () => {
+  await require('./telemetry').shutdown();
+  process.exit(0);
+}));

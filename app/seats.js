@@ -280,12 +280,13 @@ async function roomStats() {
 
 // Seated attendees not yet counted in the time-to-seat metric. Each is claimed with a
 // label write guarded by resourceVersion, so with several app replicas exactly one
-// replica (the one whose write succeeds) reports it. Re-created Pods (talk swap) keep
-// the label, so they aren't counted twice.
-async function claimNewlySeated() {
+// replica (the one whose write succeeds) reports it, via onSeated, right after its
+// claim succeeds: a later failure in the same pass can't lose it. Re-created Pods
+// (talk swap) keep the label, so they aren't counted twice.
+// Pods seated before `since` (ms) are claimed without a sample: they were seated
+// while this replica wasn't measuring, and now - requestedAt would overstate them.
+async function claimNewlySeated(onSeated, since = 0) {
   const pods = (await api('GET', `/api/v1/namespaces/${NS}/pods?labelSelector=!conf.io/recorded&fieldSelector=spec.nodeName!=`)).items;
-  const now = Date.now();
-  const claimed = [];
   for (const p of pods) {
     try {
       await api('PATCH', `/api/v1/namespaces/${NS}/pods/${p.metadata.name}`,
@@ -295,15 +296,16 @@ async function claimNewlySeated() {
       if (e.status === 409 || e.status === 404) continue; // another replica got it, or it left
       throw e;
     }
+    const scheduledAt = Date.parse((p.status?.conditions || []).find((c) => c.type === 'PodScheduled')?.lastTransitionTime || '');
+    if (scheduledAt && scheduledAt < since) continue;
     const node = p.spec.nodeName;
-    claimed.push({
-      seconds: Math.max(0, (now - Date.parse(requestedAt(p))) / 1000),
+    onSeated({
+      seconds: Math.max(0, (Date.now() - Date.parse(requestedAt(p))) / 1000),
       room: node.replace(/^room-/, '').replace(/-access$/, ''),
       pool: node.endsWith('-access') ? 'accessible' : 'general',
       mustSee: !!p.metadata.labels['conf.io/must-see'],
     });
   }
-  return claimed;
 }
 
 module.exports = { claimNewlySeated, ensureRooms, setSeats, swapTalks, requestSeat, cancelSeat, seatStatus, roomStats, attendeePod };

@@ -6,6 +6,8 @@
 // OTEL_SERVICE_NAME. Without an endpoint, telemetry stays off and the
 // @opentelemetry/api calls in the app are no-ops.
 
+module.exports.shutdown = async () => {};
+
 // An unresolved "$(DASH0_ENDPOINT)" means the Secret key is missing.
 const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || '';
 if (endpoint.startsWith('http')) {
@@ -33,10 +35,8 @@ if (endpoint.startsWith('http')) {
   });
   sdk.start();
   console.log('telemetry: exporting traces and metrics over OTLP');
-
-  process.on('SIGTERM', () => {
-    sdk.shutdown().catch(() => {});
-  });
+  // server.js awaits this on SIGTERM before exiting, so the last batch is flushed.
+  module.exports.shutdown = () => sdk.shutdown().catch(() => {});
 } else {
   console.log('telemetry: off (no OTEL_EXPORTER_OTLP_ENDPOINT)');
 }
