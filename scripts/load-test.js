@@ -86,11 +86,17 @@ async function settle(label) {
   await Promise.all(inflight);
   console.log(`Sent ${N} in ${((Date.now() - t0) / 1000).toFixed(1)} s: ${ok} accepted, ${failed} failed`);
 
-  await settle('After arrivals');
+  const before = await settle('After arrivals');
 
   console.log('\nOrganizer: move "Inside the kube-scheduler framework" (room 250) to hall-a');
   const t1 = Date.now();
   const sw = await call('POST', '/api/swap', { a: '250', b: 'hall-a' }, org);
   console.log(`  swap: ${sw.status} ${JSON.stringify(sw.body)} in ${((Date.now() - t1) / 1000).toFixed(1)} s`);
-  await settle('After the swap');
+  const after = await settle('After the swap');
+  // Nobody may lose their place: the swap re-seats people, it must never drop them.
+  const lost = before.attendees - after.attendees;
+  console.log(lost === 0
+    ? `\nPASS: all ${after.attendees} attendees kept a seat or their waitlist place`
+    : `\nFAIL: ${lost} attendees lost during the swap`);
+  if (lost !== 0) process.exitCode = 1;
 })().catch((e) => { console.error(e.message); process.exit(1); });
