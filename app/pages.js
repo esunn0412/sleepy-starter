@@ -27,7 +27,21 @@ function layout(title, body, version) {
 <footer>kubeseat · the real kube-scheduler seats you · version ${esc(version)}</footer></main></body></html>`;
 }
 
-function attendeePage({ version, slot, talks, scoring }) {
+// Real KubeCon NA 2026 talk card: track, level, speakers, room, links to the
+// session page and the speakers' slides.
+function talkMeta(t, roomName) {
+  const links = [
+    t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener">session</a>` : '',
+    t.slidesUrl ? `<a href="${esc(t.slidesUrl)}" target="_blank" rel="noopener">slides</a>` : '',
+  ].filter(Boolean).join(' · ');
+  return `<div class="meta">${esc(t.track)} · ${esc(t.level === 'Any' ? 'Any level' : t.level)}${roomName ? ` · ${esc(roomName)}` : ''}</div>
+    ${t.speakers?.length ? `<div class="meta">${esc(t.speakers.join(', '))}${links ? ` · ${links}` : ''}</div>` : ''}`;
+}
+
+const sourceNote = (note) => note ? `<p class="meta">${esc(note)} Source: <a href="https://kubecon-cloudnativecon-north-america-2026.sessionize.com" target="_blank" rel="noopener">KubeCon NA 2026 schedule</a>.</p>` : '';
+
+function attendeePage({ version, slot, talks, rooms = [], scoring, note }) {
+  const roomOf = Object.fromEntries(rooms.map((r) => [r.talk, r.name]));
   const about = scoring ? `
   <fieldset><legend>1. About you</legend>
     <p class="meta">Elasticsearch matches you to talks by meaning and by exact names (eBPF, Cilium, OpenTelemetry…).
@@ -42,7 +56,7 @@ function attendeePage({ version, slot, talks, scoring }) {
   </fieldset>` : '';
   const rows = talks.map((t) => `
     <div class="talk">
-      <div><strong>${esc(t.title)}</strong><div class="meta">${esc(t.track)} · ${esc(t.level)}</div>
+      <div><strong>${esc(t.title)}</strong>${talkMeta(t, roomOf[t.id])}
         <div class="why meta" id="why-${esc(t.id)}" aria-live="polite"></div></div>
       <div>
         <label>Interest <input type="range" min="0" max="100" value="0" name="w-${esc(t.id)}" aria-label="Interest in ${esc(t.title)}"></label>
@@ -50,7 +64,9 @@ function attendeePage({ version, slot, talks, scoring }) {
       </div>
     </div>`).join('');
   const body = `
-<h1>kubeseat</h1><p class="sub">Pick what you want to see at ${esc(when(slot.startsAt))}. The Kubernetes scheduler finds you a seat.</p>
+<h1>kubeseat</h1><p class="sub">KubeCon + CloudNativeCon NA 2026 · ${esc(when(slot.startsAt))} · ${talks.length} talks at once.
+  Tell us what you're into; the real Kubernetes scheduler finds you a seat.</p>
+${sourceNote(note)}
 <form id="f">${about}
   <fieldset><legend>${scoring ? '2. ' : ''}Talks this slot</legend>${rows}
     <div class="talk"><div class="meta">No must-see</div><div><label><input type="radio" name="mustSee" value="" checked> None</label></div></div>
@@ -65,6 +81,7 @@ function attendeePage({ version, slot, talks, scoring }) {
 <div id="seat" class="card" aria-live="polite" hidden></div>
 <script>
 const talks = ${JSON.stringify(Object.fromEntries(talks.map((t) => [t.id, t.title])))};
+const roomNames = ${JSON.stringify(Object.fromEntries(rooms.map((r) => [r.id, r.name])))};
 const f = document.getElementById('f'), out = document.getElementById('seat');
 let id = null, timer = null, podOpen = false;
 const scoreBtn = document.getElementById('score');
@@ -101,7 +118,7 @@ async function poll() {
   if (!r.ok) { out.textContent = 'No seat request.'; return; }
   const s = await r.json();
   if (s.state === 'seated') {
-    out.innerHTML = '<h2 class="ok">Seated: Room ' + s.room + '</h2><p>' + (talks[s.talk] || s.talk) + '</p>' +
+    out.innerHTML = '<h2 class="ok">Seated: ' + (roomNames[s.room] || 'Room ' + s.room) + '</h2><p>' + (talks[s.talk] || s.talk) + '</p>' +
       (s.accessibleSeat ? '<p>Accessible seat held for you.</p>' : '') + '<button class="secondary" id="cancel">I can\\'t make it</button>';
   } else {
     out.innerHTML = '<h2 class="warn">Waiting</h2><p>' + s.reason + '</p>' +
@@ -123,10 +140,12 @@ async function poll() {
   return layout('kubeseat', body, version);
 }
 
-function organizerPage({ version, slot, talks }) {
+function organizerPage({ version, slot, talks, rooms = [], note }) {
+  const roomNames = Object.fromEntries(rooms.map((r) => [r.id, r.name]));
   const titles = Object.fromEntries(talks.map((t) => [t.id, t.title]));
   const body = `
-<h1>kubeseat · organizer</h1><p class="sub">Rooms for ${esc(when(slot.startsAt))}. Seats update live.</p>
+<h1>kubeseat · organizer</h1><p class="sub">KubeCon NA 2026 · ${esc(when(slot.startsAt))} · seats update live.</p>
+${sourceNote(note)}
 <p id="summary" aria-live="polite"></p>
 <table><thead><tr><th>Room</th><th>Talk</th><th>General</th><th>Accessible</th><th>Waitlist</th><th>Seats</th></tr></thead><tbody id="rows"></tbody></table>
 <div class="card"><form id="swap"><strong>Move a talk to another room</strong><br>
@@ -134,6 +153,7 @@ function organizerPage({ version, slot, talks }) {
   <button>Swap talks</button></form></div>
 <script>
 const titles = ${JSON.stringify(titles)};
+const roomNames = ${JSON.stringify(roomNames)};
 const bar = (p) => '<span>' + p.used + ' / ' + p.seats + '</span><div class="bar' + (p.used >= p.seats ? ' full' : '') +
   '"><i style="width:' + (p.seats ? Math.min(100, 100 * p.used / p.seats) : 0) + '%"></i></div>';
 let filled = false;
@@ -145,7 +165,7 @@ async function load() {
   const d = await r.json();
   document.getElementById('summary').textContent = d.attendees + ' attendees, ' + d.pending + ' waiting for a seat.';
   document.getElementById('rows').innerHTML = d.rooms.map((x) =>
-    '<tr><td>' + x.room + (x.stepFree ? ' <span title="step-free">♿</span>' : '') + (x.captions ? ' <span title="captions">CC</span>' : '') + '</td>' +
+    '<tr><td>' + (roomNames[x.room] || x.room) + (x.stepFree ? ' <span title="step-free">♿</span>' : '') + (x.captions ? ' <span title="captions">CC</span>' : '') + '</td>' +
     '<td>' + (titles[x.talk] || x.talk) + '</td><td>' + bar(x.general) + '</td><td>' + bar(x.accessible) + '</td><td>' + x.waitlist + '</td>' +
     '<td><form data-room="' + x.room + '"><label class="meta">General <input type="number" min="0" max="5000" value="' + x.general.seats + '" style="width:5em"></label> <button class="secondary">Set</button></form></td></tr>').join('');
   document.querySelectorAll('#rows form').forEach((f) => f.onsubmit = async (e) => {
@@ -155,7 +175,7 @@ async function load() {
     load();
   });
   if (!filled) {
-    const opts = d.rooms.map((x) => '<option>' + x.room + '</option>').join('');
+    const opts = d.rooms.map((x) => '<option value="' + x.room + '">' + (roomNames[x.room] || x.room) + '</option>').join('');
     document.getElementById('sa').innerHTML = opts; document.getElementById('sb').innerHTML = opts; filled = true;
   }
   setTimeout(load, 2000);
