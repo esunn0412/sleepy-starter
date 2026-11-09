@@ -35,6 +35,34 @@ spec:
                   name: app-credentials
                   key: organizer-token
                   optional: true
+            # OpenTelemetry → Dash0 (OTLP/HTTP). Endpoint and token come from the
+            # app-credentials Secret; without them telemetry stays off.
+            - name: DASH0_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: app-credentials
+                  key: dash0-endpoint
+                  optional: true
+            - name: DASH0_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: app-credentials
+                  key: dash0-auth-token
+                  optional: true
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OTEL_SERVICE_NAME
+              value: "kubeseat"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "$(DASH0_ENDPOINT)"
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              value: "Authorization=Bearer%20$(DASH0_AUTH_TOKEN)"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=team-sleepy,deployment.environment.name=hackathon,k8s.namespace.name=team-sleepy,k8s.deployment.name=app,k8s.pod.name=$(POD_NAME)"
+            - name: OTEL_SEMCONV_STABILITY_OPT_IN
+              value: "http"
           resources:
             requests:
               cpu: 100m
