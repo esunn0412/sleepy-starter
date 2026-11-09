@@ -140,7 +140,8 @@ async function poll() {
   out.innerHTML = head + (list.length ? '<ol class="options">' + list.map((o, i) =>
     opt(o, i === 0 && s.state === 'seated' && !s.roomFull ? 'Go' : 'Backup ' + (s.state === 'seated' && !s.roomFull ? i : i + 1))).join('') + '</ol>' : '') +
     '<button class="secondary" id="cancel">I can\\'t make it</button>';
-  timer = setTimeout(poll, 3000);
+  // Placed attendees refresh less often than people still waiting.
+  timer = setTimeout(poll, s.state === "seated" && !s.roomFull ? 6000 : 3000);
   const podBox = document.createElement('details');
   podBox.innerHTML = '<summary>Show me as a Pod</summary><pre style="overflow:auto;font-size:13px"></pre>';
   const showPod = async () => { podBox.querySelector('pre').textContent = await (await fetch('/api/attendees/' + id + '/pod')).text(); };
