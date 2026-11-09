@@ -16,6 +16,21 @@ spec:
       labels:
         app: app
     spec:
+      # The app never calls the team cluster's API (only the seat cluster, over
+      # plain HTTP), so it needs no ServiceAccount token.
+      automountServiceAccountToken: false
+      # Spread the two replicas across nodes, so one node going away doesn't take both.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: app
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
       containers:
         - name: app
           image: app
@@ -102,8 +117,13 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 10
+          # Read-only image filesystem; /tmp is the only writable path.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           securityContext:
             runAsNonRoot: true
+            readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             seccompProfile:
               type: RuntimeDefault
