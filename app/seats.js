@@ -120,18 +120,33 @@ async function swapTalks(roomA, roomB) {
   const seated = (await api('GET', `/api/v1/namespaces/${NS}/pods`)).items
     .filter((p) => live(p) && swapped.has(p.spec.nodeName))
     .sort((x, y) => requestedAt(x).localeCompare(requestedAt(y)));
-  for (const p of seated) {
-    await api('DELETE', `/api/v1/namespaces/${NS}/pods/${p.metadata.name}?gracePeriodSeconds=0`);
+  const reseat = async (p) => {
     const { nodeName, ...spec } = p.spec;
     // A NEW name, never the old one: KWOK finishes the old Pod's deletion by name a
     // moment later, and with a reused name it deleted the re-created Pod instead
     // (8 of 1,000 attendees lost their seat in the first load test).
-    await api('POST', `/api/v1/namespaces/${NS}/pods`, {
+    const fresh = {
       apiVersion: 'v1',
       kind: 'Pod',
       metadata: { name: podName(p.metadata.labels['conf.io/attendee']), labels: p.metadata.labels, annotations: p.metadata.annotations },
       spec,
-    });
+    };
+    await api('DELETE', `/api/v1/namespaces/${NS}/pods/${p.metadata.name}?gracePeriodSeconds=0`);
+    // Once deleted, the attendee must get a new Pod: retry the create before giving up.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await api('POST', `/api/v1/namespaces/${NS}/pods`, fresh);
+      } catch (e) {
+        if (attempt >= 3) throw e;
+        await new Promise((r) => setTimeout(r, 200 * attempt));
+      }
+    }
+  };
+  // In batches of 10, earliest request first: one at a time took ~16 s for 425
+  // attendees live (the long POST /api/swap trace in Dash0).
+  const BATCH = 10;
+  for (let i = 0; i < seated.length; i += BATCH) {
+    await Promise.all(seated.slice(i, i + BATCH).map(reseat));
   }
   console.log(`talks swapped rooms=${roomA},${roomB} reseated=${seated.length}`);
   return { reseated: seated.length };
