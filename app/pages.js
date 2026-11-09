@@ -145,12 +145,23 @@ const titles = ${JSON.stringify(titles)};
 const roomNames = ${JSON.stringify(roomNames)};
 const bar = (p) => '<span>' + p.used + ' / ' + p.seats + '</span><div class="bar' + (p.used >= p.seats ? ' full' : '') +
   '"><i style="width:' + (p.seats ? Math.min(100, 100 * p.used / p.seats) : 0) + '%"></i></div>';
-let filled = false, loadTimer = null;
+// One refresh at a time and one pending timer: taps during a refresh queue one more
+// refresh instead of starting extra polling loops.
+let filled = false, loadTimer = null, loading = false, again = false;
+const later = (ms) => { clearTimeout(loadTimer); loadTimer = setTimeout(load, ms); };
 async function load() {
+  if (loading) { again = true; return; }
+  loading = true; clearTimeout(loadTimer);
+  try { await refresh(); } finally {
+    loading = false;
+    if (again) { again = false; load(); }
+  }
+}
+async function refresh() {
   // Don't redraw while an organizer is typing a seat count.
-  if (document.activeElement && document.activeElement.matches('#rows input')) return setTimeout(load, 2000);
-  const r = await fetch('/api/rooms');
-  if (!r.ok) { document.getElementById('summary').textContent = 'Seat service unavailable.'; return setTimeout(load, 3000); }
+  if (document.activeElement && document.activeElement.matches('#rows input')) return later(2000);
+  const r = await fetch('/api/rooms').catch(() => null);
+  if (!r || !r.ok) { document.getElementById('summary').textContent = 'Seat service unavailable.'; return later(3000); }
   const d = await r.json();
   document.getElementById('summary').textContent = d.attendees + ' attendees, ' + d.pending + ' waiting for a seat.';
   document.getElementById('rows').innerHTML = d.rooms.map((x) =>
@@ -165,7 +176,7 @@ async function load() {
   document.querySelectorAll('#rows .clicker button').forEach((b) => b.onclick = async () => {
     await fetch('/api/rooms/' + b.dataset.room + '/door', { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ delta: Number(b.dataset.d) }) });
-    clearTimeout(loadTimer); load();
+    load();
   });
   document.querySelectorAll('#rows form').forEach((f) => f.onsubmit = async (e) => {
     e.preventDefault();
@@ -177,7 +188,7 @@ async function load() {
     const opts = d.rooms.map((x) => '<option value="' + x.room + '">' + (roomNames[x.room] || x.room) + '</option>').join('');
     document.getElementById('sa').innerHTML = opts; document.getElementById('sb').innerHTML = opts; filled = true;
   }
-  loadTimer = setTimeout(load, 2000);
+  later(2000);
 }
 document.getElementById('swap').onsubmit = async (e) => {
   e.preventDefault();

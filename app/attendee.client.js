@@ -195,10 +195,14 @@
 
   async function poll() {
     clearTimeout(pollTimer);
-    const r = await fetch('/api/attendees/' + id);
+    const mine = id; // a poll that returns after release (or a new request) is ignored
+    if (!mine) return;
+    const r = await fetch('/api/attendees/' + mine);
+    if (id !== mine) return;
     out.hidden = false;
     if (!r.ok) { out.textContent = 'No seat request.'; return; }
     const s = await r.json();
+    if (id !== mine) return;
     const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
     const roomName = (room) => cfg.rooms[room] || 'Room ' + room;
     // Live options: where to go now, and two backups that still have space at the door.
@@ -235,7 +239,8 @@
     pollTimer = setTimeout(poll, s.state === 'seated' && !full ? 6000 : 3000);
     const cancel = Object.assign(document.createElement('button'), { type: 'button', className: 'secondary', textContent: "I can't make it" });
     cancel.onclick = async () => {
-      await fetch('/api/attendees/' + id, { method: 'DELETE' }); clearTimeout(pollTimer); id = null;
+      const releasing = id; id = null; clearTimeout(pollTimer);
+      await fetch('/api/attendees/' + releasing, { method: 'DELETE' });
       out.textContent = 'Released. Your spot goes to someone else.';
     };
     out.append(cancel);
