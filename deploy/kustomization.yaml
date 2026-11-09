@@ -13,4 +13,4 @@ resources:
 images:
   - name: app
     newName: ghcr.io/esunn0412/sleepy-starter
-    newTag: 1f35c59
+    newTag: fb62d58
