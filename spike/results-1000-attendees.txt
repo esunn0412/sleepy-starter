@@ -1,0 +1,57 @@
+
+1. Interests become seat choices (weighted preferred affinity)
+    lee        -> room-251
+    marco      -> room-355
+    priya      -> room-155
+  [PASS] priya gets her top interest (eBPF, weight 87)
+  [PASS] marco gets his top interest (Wasm, weight 91)
+  [PASS] lee gets his top interest (Cilium, weight 75)
+
+2. Seats are a hard limit; extra people fall back to their next choice
+    fan-1      -> room-155
+    fan-2      -> room-155
+    fan-3      -> room-155
+    fan-4      -> room-251
+    fan-5      -> room-251
+  [PASS] exactly 3 seated in the 3-seat eBPF room (got 3)
+  [PASS] nobody left without a seat while Cilium has room (pending 0)
+
+3. Must-see talk: full room means Pending with a reason; an overflow room seats them
+    pin-1      -> room-155
+    pin-2      -> room-155
+    pin-3      -> Pending: 0/2 nodes are available: 1 Insufficient conf.io/seat, 1 node(s) didn't match Pod's node affinity/selector. no new claims to deallocate, preemption: 0/2 nodes are available: 1 No preemption victims found for incoming pod, 1 Preemption is not helpful for scheduling.
+    pin-4      -> Pending: 0/2 nodes are available: 1 Insufficient conf.io/seat, 1 node(s) didn't match Pod's node affinity/selector. no new claims to deallocate, preemption: 0/2 nodes are available: 1 No preemption victims found for incoming pod, 1 Preemption is not helpful for scheduling.
+  [PASS] 2 of 4 are Pending (got 2)
+  [PASS] Pending reason names the seat shortage: "0/2 nodes are available: 1 Insufficient conf.io/seat, 1 node(s) didn't match Pod's node affinity/selector. no new claims to deallocate, preemption: 0/2 nodes are available: 1 No preemption victims found for incoming pod, 1 Preemption is not helpful for scheduling."
+  organizer adds overflow room room-155b (same talk, 50 seats)...
+    pin-1      -> room-155
+    pin-2      -> room-155
+    pin-3      -> room-155b
+    pin-4      -> room-155b
+  [PASS] all Pending people seated after overflow added, in 103ms
+
+4. Access needs are hard constraints; the accessible-seat pool is protected
+    ana        -> room-155-acc
+    ben        -> room-155
+    cy         -> room-355
+    dee        -> Pending: 0/3 nodes are available: 1 node(s) had untolerated taint {conf.io/accessible-seats: true}, 2 Insufficient conf.io/seat. no new claims to deallocate, preemption: 0/3 nodes are available: 1 Preemption is not helpful for scheduling, 2 No preemption victims found for incoming pod.
+  [PASS] step-free attendee never placed in the room with stairs (got room-155-acc)
+  [PASS] the person who needs it gets an accessible seat, and only they use the pool (in pool: [ana])
+  [PASS] both general seats go to others, so 3 of 4 are seated (got 3)
+  [PASS] the 4th person stays Pending rather than taking the spare accessible seat: "0/3 nodes are available: 1 node(s) had untolerated taint {conf.io/accessible-seats: true}, 2 Insufficient conf.io/seat. no new claims to deallocate, preemption: 0/3 nodes are available: 1 Preemption is not helpful for scheduling, 2 No preemption victims found for incoming pod."
+
+5. Friends prefer the same room (preferred pod affinity)
+    kim        -> room-155
+    sam        -> room-155
+  [PASS] sam sits with friend kim (room-155)
+
+6. Scale: 1000 attendees, 12 rooms x 100 seats
+    seated 1000, pending 0, in 5.364s (186 attendees/s)
+    got first choice: 298 of 1000 (first-choice rooms hold 300 seats)
+    seat in room-02 went to a-0000, whose picks all had stairs: true
+    seat in room-01 went to a-0075, whose picks all had stairs: true
+  [PASS] no room over capacity
+  [PASS] everyone seated who can be (seated 1000)
+  [PASS] first-choice seats only go elsewhere when the person had no workable preference (0 did)
+
+0 check(s) failed
