@@ -120,13 +120,23 @@ async function swapTalks(roomA, roomB) {
   const seated = (await api('GET', `/api/v1/namespaces/${NS}/pods`)).items
     .filter((p) => live(p) && swapped.has(p.spec.nodeName))
     .sort((x, y) => requestedAt(x).localeCompare(requestedAt(y)));
+  // One at a time (delete, then create) took ~16 s for 425 attendees live: the long
+  // POST /api/swap trace in Dash0. Deletes run in parallel batches; creates stay
+  // strictly one by one in request order, so the scheduler's queue (priority, then
+  // arrival) still seats the earliest request first when the target room is short.
+  const BATCH = 10;
+  for (let i = 0; i < seated.length; i += BATCH) {
+    await Promise.all(seated.slice(i, i + BATCH).map((p) => api('DELETE',
+      `/api/v1/namespaces/${NS}/pods/${p.metadata.name}?gracePeriodSeconds=0`).catch((e) => {
+      if (e.status !== 404) throw e; // already gone is fine
+    })));
+  }
   for (const p of seated) {
-    await api('DELETE', `/api/v1/namespaces/${NS}/pods/${p.metadata.name}?gracePeriodSeconds=0`);
     const { nodeName, ...spec } = p.spec;
     // A NEW name, never the old one: KWOK finishes the old Pod's deletion by name a
     // moment later, and with a reused name it deleted the re-created Pod instead
     // (8 of 1,000 attendees lost their seat in the first load test).
-    await api('POST', `/api/v1/namespaces/${NS}/pods`, {
+    await createWithRetry({
       apiVersion: 'v1',
       kind: 'Pod',
       metadata: { name: podName(p.metadata.labels['conf.io/attendee']), labels: p.metadata.labels, annotations: p.metadata.annotations },
@@ -152,6 +162,22 @@ async function findPod(id) {
   const pods = (await api('GET', `/api/v1/namespaces/${NS}/pods?labelSelector=conf.io/attendee=${id}`)).items.filter(live);
   pods.sort((a, b) => b.metadata.creationTimestamp.localeCompare(a.metadata.creationTimestamp) || b.metadata.name.localeCompare(a.metadata.name));
   return pods[0] || null;
+}
+
+// Once an attendee's Pod is deleted they must get a new one, so retry transient
+// failures. A 409 on a retry means an earlier attempt (e.g. one that timed out
+// client-side) did create it: that's success. Other 4xx are not retried.
+async function createWithRetry(pod) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await api('POST', `/api/v1/namespaces/${NS}/pods`, pod);
+    } catch (e) {
+      if (attempt > 1 && e.status === 409) return null;
+      const transient = !e.status || e.status === 429 || e.status >= 500;
+      if (!transient || attempt >= 3) throw e;
+      await new Promise((r) => setTimeout(r, 200 * attempt));
+    }
+  }
 }
 
 // creationTimestamp is per-second; the request annotation has milliseconds.
