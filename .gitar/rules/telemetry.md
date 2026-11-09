@@ -10,5 +10,5 @@ actions: "Comment on each gap and suggest the fix"
 
 - New HTTP endpoints get an OpenTelemetry server span named by route template (`GET /api/attendees/:id`), never by raw path.
 - Seat changes keep the `kubeseat.seat.time_to_seat` histogram and the waiting/used/capacity gauges correct; each seat is recorded once across replicas.
-- Background loops (pollers, seeding) run with tracing suppressed (`untraced`), so traces show real requests.
+- Background loops (pollers, room seeding) run with tracing suppressed, via `suppressTracing` from `@opentelemetry/core` (the app wraps this as `untraced()` in `app/untraced.js`, added in PR #10), so traces show real requests.
 - Metric attributes are low-cardinality: room, pool, talk, booleans. No attendee ids.
