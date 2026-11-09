@@ -8,6 +8,7 @@
   const f = $('f'), out = $('seat'), msg = $('scoreMsg');
   const titles = Object.fromEntries(cfg.talks.map((t) => [t.id, t.title]));
   const profile = { topics: new Set(), github: '', githubText: '', resume: '' };
+  const whyOf = {}; // talk id -> reason from the last scoring, shown on the options
 
   // --- Inputs ----------------------------------------------------------------
 
@@ -161,6 +162,7 @@
 
   function apply(scores) {
     const byTalk = Object.fromEntries((scores || []).map((s, i) => [s.talk, { ...s, rank: i }]));
+    for (const x of scores || []) whyOf[x.talk] = x.why;
     document.querySelectorAll('.pick').forEach((card) => {
       const s = byTalk[card.dataset.talk];
       const slider = card.querySelector('input[type=range]'), badge = card.querySelector('.badge');
@@ -193,24 +195,53 @@
 
   async function poll() {
     clearTimeout(pollTimer);
-    const r = await fetch('/api/attendees/' + id);
+    const mine = id; // a poll that returns after release (or a new request) is ignored
+    if (!mine) return;
+    const r = await fetch('/api/attendees/' + mine);
+    if (id !== mine) return;
     out.hidden = false;
     if (!r.ok) { out.textContent = 'No seat request.'; return; }
     const s = await r.json();
-    const h = document.createElement('h2'), p = document.createElement('p');
+    if (id !== mine) return;
+    const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+    const roomName = (room) => cfg.rooms[room] || 'Room ' + room;
+    // Live options: where to go now, and two backups that still have space at the door.
+    const opts = s.options || [];
+    const full = s.state === 'seated' && s.roomFull;
+    const h = el('h2'), p = el('p');
     out.replaceChildren(h, p);
-    if (s.state === 'seated') {
-      h.className = 'ok'; h.textContent = 'Seated: ' + (cfg.rooms[s.room] || 'Room ' + s.room); p.textContent = titles[s.talk] || s.talk;
-      if (s.accessibleSeat) out.append(Object.assign(document.createElement('p'), { textContent: 'Accessible seat held for you.' }));
+    if (full) {
+      h.className = 'warn'; h.textContent = roomName(s.room) + ' just filled up at the door';
+      p.textContent = 'Head to your backup instead:';
+    } else if (s.state === 'seated') {
+      h.className = 'ok'; h.textContent = 'Go to ' + roomName(s.room); p.textContent = titles[s.talk] || s.talk;
+      if (s.accessibleSeat) out.append(el('p', { textContent: 'Accessible seat held for you.' }));
     } else {
-      h.className = 'warn'; h.textContent = 'Waiting'; p.textContent = s.reason;
-      if (s.waitlistPosition) out.append(Object.assign(document.createElement('p'), { textContent: 'Waitlist position: #' + s.waitlistPosition }));
-      pollTimer = setTimeout(poll, 2000);
+      h.className = 'warn'; h.textContent = 'Your first choice is full'; p.textContent = s.reason;
+      if (s.waitlistPosition) out.append(el('p', { textContent: 'Waitlist position: #' + s.waitlistPosition + '. Meanwhile:' }));
     }
-    const cancel = Object.assign(document.createElement('button'), { type: 'button', className: 'secondary', textContent: s.state === 'seated' ? "I can't make it" : 'Leave the waitlist' });
+    const list = full ? opts.filter((o) => o.room !== s.room) : opts;
+    if (list.length) {
+      const ol = el('ol', { className: 'options' });
+      list.forEach((o, i) => {
+        const label = i === 0 && s.state === 'seated' && !full ? 'Go' : 'Backup ' + (s.state === 'seated' && !full ? i : i + 1);
+        const pct = Math.min(100, Math.round(100 * o.door / Math.max(1, o.capacity)));
+        const bar = el('div', { className: 'bar' + (o.full ? ' full' : '') }, el('i', { style: 'width:' + pct + '%' }));
+        ol.append(el('li', {},
+          el('strong', { textContent: label + ': ' }), titles[o.talk] || o.talk, el('br'),
+          el('span', { className: 'meta', textContent: roomName(o.room) }),
+          ...(whyOf[o.talk] ? [el('br'), el('span', { className: 'meta', textContent: whyOf[o.talk] })] : []),
+          bar, el('span', { className: 'meta', textContent: o.door + ' / ' + o.capacity + ' in the room' + (o.full ? ' · full' : '') })));
+      });
+      out.append(ol);
+    }
+    // Placed attendees refresh less often than people still waiting.
+    pollTimer = setTimeout(poll, s.state === 'seated' && !full ? 6000 : 3000);
+    const cancel = Object.assign(document.createElement('button'), { type: 'button', className: 'secondary', textContent: "I can't make it" });
     cancel.onclick = async () => {
-      await fetch('/api/attendees/' + id, { method: 'DELETE' }); clearTimeout(pollTimer); id = null;
-      out.textContent = 'Seat released. It goes to the next person on the waitlist.';
+      const releasing = id; id = null; clearTimeout(pollTimer);
+      await fetch('/api/attendees/' + releasing, { method: 'DELETE' });
+      out.textContent = 'Released. Your spot goes to someone else.';
     };
     out.append(cancel);
     const podBox = document.createElement('details');

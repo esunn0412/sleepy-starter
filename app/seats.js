@@ -8,6 +8,9 @@
 const SEATS_URL = process.env.SEATS_URL || 'http://seats:8080';
 const NS = 'default';
 const SEAT = 'conf.io/seat';
+const CAPACITY = 'conf.io/capacity';
+const DOOR = 'conf.io/door';
+let statsCache = null; // { at, value }: room stats shared by status polls
 
 async function api(method, path, body, contentType = 'application/json') {
   const res = await fetch(SEATS_URL + path, {
@@ -45,7 +48,8 @@ function roomNode(name, room, talk, seats, pool) {
       name,
       labels,
       // KWOK manages Nodes with this annotation: marks them Ready and fakes Pods as Running.
-      annotations: { 'kwok.x-k8s.io/node': 'fake' },
+      // conf.io/capacity: the room's seats; conf.io/door: people counted in at the door.
+      annotations: { 'kwok.x-k8s.io/node': 'fake', [CAPACITY]: String(seats), [DOOR]: '0' },
     },
     spec: pool === 'accessible'
       ? { taints: [{ key: 'conf.io/accessible-seats', value: 'true', effect: 'NoSchedule' }] }
@@ -80,19 +84,95 @@ async function ensureRooms(rooms) {
       }
       // TaintNodesByCondition admission adds node.kubernetes.io/not-ready to every new
       // Node, and only the controller-manager (absent in the seat pod) removes it. Set
-      // exactly the taints the room should have.
+      // exactly the taints the room should have. Nodes created before the door clicker
+      // existed also get their capacity/door annotations here (never overwritten), so
+      // occupancy is always measured against the room's real capacity.
+      const cur = await api('GET', `/api/v1/nodes/${node.metadata.name}`);
+      const anns = cur.metadata.annotations || {};
+      const add = {};
+      if (anns[CAPACITY] === undefined) add[CAPACITY] = node.metadata.annotations[CAPACITY];
+      if (anns[DOOR] === undefined) add[DOOR] = '0';
       await api('PATCH', `/api/v1/nodes/${node.metadata.name}`,
-        { spec: { taints: node.spec.taints || [] } }, 'application/merge-patch+json');
+        { metadata: { annotations: add }, spec: { taints: node.spec.taints || [] } }, 'application/merge-patch+json');
+    }
+  }
+}
+
+// --- Live occupancy (door clicker) --------------------------------------------
+//
+// A volunteer at the door counts people in and out. That count is the room's real
+// occupancy. Some of those people came through kubeseat (their Pods are bound to the
+// room); the rest are walk-ins. The scheduler may only hand out what's really left:
+//
+//   seats the scheduler sees = capacity - walk-ins,  walk-ins = max(0, door - app attendees)
+//
+// (never below the app attendees already bound there). When the door count reaches
+// capacity, the room takes no new recommendations and attendees are steered to backups.
+
+const nodeName = (roomId, pool) => (pool === 'accessible' ? `room-${roomId}-access` : `room-${roomId}`);
+const ann = (n, k, dflt) => {
+  const v = Number(n.metadata.annotations?.[k]);
+  return Number.isFinite(v) ? v : dflt;
+};
+
+// Back off a random few ms on a write conflict so simultaneous taps don't collide again.
+const jitter = () => new Promise((r) => setTimeout(r, 5 + Math.random() * 40));
+
+async function applyOccupancy(name) {
+  // Guarded by the Node's resourceVersion: if another replica changed the door count
+  // or capacity since our read, the write fails and we recompute from a fresh read, so
+  // a late writer can't restore seats for a stale count.
+  for (let attempt = 1; ; attempt++) {
+    const n = await api('GET', `/api/v1/nodes/${name}`);
+    const used = (await api('GET', `/api/v1/namespaces/${NS}/pods?fieldSelector=spec.nodeName=${name}`)).items.filter(live).length;
+    const capacity = ann(n, CAPACITY, Number(n.status.capacity?.[SEAT] || 0));
+    const door = ann(n, DOOR, 0);
+    const walkIns = Math.max(0, door - used);
+    const s = String(Math.max(used, capacity - walkIns));
+    try {
+      await api('PATCH', `/api/v1/nodes/${name}/status`,
+        { metadata: { resourceVersion: n.metadata.resourceVersion }, status: { capacity: { [SEAT]: s }, allocatable: { [SEAT]: s } } },
+        'application/merge-patch+json');
+      return;
+    } catch (e) {
+      if (e.status !== 409 || attempt >= 30) throw e;
+      await jitter();
+    }
+  }
+}
+
+// Change one annotation safely when two app replicas (two organizers) write at once.
+async function updateAnnotation(name, key, fn) {
+  for (let attempt = 1; ; attempt++) {
+    const n = await api('GET', `/api/v1/nodes/${name}`);
+    const next = fn(ann(n, key, key === CAPACITY ? Number(n.status.allocatable[SEAT] || 0) : 0));
+    try {
+      await api('PATCH', `/api/v1/nodes/${name}`,
+        { metadata: { resourceVersion: n.metadata.resourceVersion, annotations: { [key]: String(next) } } },
+        'application/merge-patch+json');
+      return next;
+    } catch (e) {
+      if (e.status !== 409 || attempt >= 30) throw e;
+      await jitter();
     }
   }
 }
 
 async function setSeats(roomId, pool, seats) {
-  const name = pool === 'accessible' ? `room-${roomId}-access` : `room-${roomId}`;
-  const s = String(seats);
-  await api('PATCH', `/api/v1/nodes/${name}/status`,
-    { status: { capacity: { [SEAT]: s }, allocatable: { [SEAT]: s } } },
-    'application/merge-patch+json');
+  const name = nodeName(roomId, pool);
+  await updateAnnotation(name, CAPACITY, () => seats);
+  await applyOccupancy(name);
+}
+
+// The door clicker: +delta, or set an absolute count. Returns the new count.
+async function countDoor(roomId, { delta, count }) {
+  const name = nodeName(roomId, 'general');
+  const door = await updateAnnotation(name, DOOR, (cur) =>
+    Math.min(100000, Math.max(0, Number.isInteger(count) ? count : cur + delta)));
+  await applyOccupancy(name);
+  statsCache = null;
+  console.log(`door count room=${roomId} count=${door}`);
+  return door;
 }
 
 // Swap the talks in two rooms (e.g. move a packed talk to a bigger room).
@@ -261,20 +341,26 @@ async function seatStatus(id) {
   const pod = await findPod(id);
   if (!pod) return null;
   const node = pod.spec.nodeName;
+  const stats = await roomStatsCached();
+  const options = optionsFor(pod, stats);
   if (node) {
     const n = await api('GET', `/api/v1/nodes/${node}`);
+    const room = n.metadata.labels['conf.io/room'];
     return {
       state: 'seated',
-      room: n.metadata.labels['conf.io/room'],
+      room,
       talk: n.metadata.labels['conf.io/talk'],
       accessibleSeat: n.metadata.labels['conf.io/pool'] === 'accessible',
+      // Filled up at the door since we recommended it: send them to a backup.
+      roomFull: !!stats.rooms.find((r) => r.room === room)?.full,
+      options,
     };
   }
   const needs = {
     stepFree: JSON.stringify(pod.spec.affinity || {}).includes('step-free'),
     captions: JSON.stringify(pod.spec.affinity || {}).includes('captions'),
   };
-  const out = { state: 'waiting', reason: explain(pod, needs) };
+  const out = { state: 'waiting', reason: explain(pod, needs), options };
   const mustSee = pod.metadata.labels['conf.io/must-see'];
   if (mustSee) {
     const waiting = (await api('GET', `/api/v1/namespaces/${NS}/pods?labelSelector=conf.io/must-see=${encodeURIComponent(mustSee)}&fieldSelector=spec.nodeName=`)).items.filter(live);
@@ -310,10 +396,70 @@ async function roomStats() {
     const pool = r[l['conf.io/pool']];
     pool.seats = Number(n.status.allocatable[SEAT] || 0);
     pool.used = used[n.metadata.name] || 0;
+    if (l['conf.io/pool'] === 'general') {
+      // Live occupancy from the door clicker.
+      r.capacity = ann(n, CAPACITY, pool.seats);
+      r.door = ann(n, DOOR, 0);
+    }
   }
-  const list = Object.values(rooms).map((r) => ({ ...r, waitlist: waitingFor[r.talk] || 0 }));
+  const list = Object.values(rooms).map((r) => ({
+    ...r,
+    full: r.door >= r.capacity,
+    waitlist: waitingFor[r.talk] || 0,
+  }));
   list.sort((a, b) => a.room.localeCompare(b.room));
   return { rooms: list, pending, attendees: pods.length };
+}
+
+// Status polls from every attendee share one fresh-enough read.
+// The promise is cached, so concurrent misses share one read instead of each listing
+// every Pod and Node.
+async function roomStatsCached(maxAgeMs = 2000) {
+  if (statsCache && Date.now() - statsCache.at < maxAgeMs) return statsCache.value;
+  const value = roomStats();
+  statsCache = { at: Date.now(), value };
+  value.catch(() => { if (statsCache?.value === value) statsCache = null; });
+  return value;
+}
+
+// Three options for an attendee: where the scheduler placed them ("go"), and two
+// backups from their own preferences whose rooms still have space at the door and
+// meet their access needs. If their room fills up at the door, they're told to go
+// to backup 1.
+function optionsFor(pod, stats) {
+  const aff = pod.spec.affinity?.nodeAffinity || {};
+  const required = (aff.requiredDuringSchedulingIgnoredDuringExecution?.nodeSelectorTerms?.[0]?.matchExpressions) || [];
+  const needs = {
+    captions: required.some((e) => e.key === 'access.conf.io/captions'),
+    stepFree: required.some((e) => e.key === 'access.conf.io/step-free'),
+    accessibleSeat: (pod.spec.tolerations || []).some((t) => t.key === 'conf.io/accessible-seats'),
+  };
+  const prefs = (aff.preferredDuringSchedulingIgnoredDuringExecution || [])
+    .map((p) => ({ weight: p.weight, e: p.preference.matchExpressions[0] }))
+    .filter((p) => p.e.key === 'conf.io/talk')
+    .sort((a, b) => b.weight - a.weight)
+    .map((p) => p.e.values[0]);
+  const mustSee = pod.metadata.labels['conf.io/must-see'];
+  const byTalk = Object.fromEntries(stats.rooms.map((r) => [r.talk, r]));
+  const fits = (r) => r && (!needs.captions || r.captions) && (!needs.stepFree || r.stepFree)
+    && (!needs.accessibleSeat || r.accessible.used < r.accessible.seats);
+  const view = (r, kind) => ({ kind, talk: r.talk, room: r.room, door: r.door, capacity: r.capacity, full: r.full });
+
+  const bound = pod.spec.nodeName && stats.rooms.find((r) => pod.spec.nodeName.startsWith(`room-${r.room}`)
+    && (pod.spec.nodeName === `room-${r.room}` || pod.spec.nodeName === `room-${r.room}-access`));
+  const out = [];
+  if (bound) out.push(view(bound, 'go'));
+  // Backups: own preferences first (the must-see too, if it's not where they're going),
+  // then any other open room that meets their needs, emptiest first.
+  const order = [...new Set([mustSee, ...prefs].filter(Boolean))];
+  const rest = stats.rooms.filter((r) => !order.includes(r.talk)).sort((a, b) => a.door / a.capacity - b.door / b.capacity).map((r) => r.talk);
+  for (const t of [...order, ...rest]) {
+    if (out.length >= 3) break;
+    const r = byTalk[t];
+    if (!fits(r) || r.full || out.some((o) => o.talk === t)) continue;
+    out.push(view(r, out.length ? 'backup' : 'go'));
+  }
+  return out;
 }
 
 // Seated attendees not yet counted in the time-to-seat metric. Each is claimed with a
@@ -369,4 +515,4 @@ async function getPod(id) {
   };
 }
 
-module.exports = { getPod, claimNewlySeated, ensureRooms, setSeats, swapTalks, requestSeat, cancelSeat, seatStatus, roomStats, attendeePod };
+module.exports = { countDoor, roomStatsCached, getPod, claimNewlySeated, ensureRooms, setSeats, swapTalks, requestSeat, cancelSeat, seatStatus, roomStats, attendeePod };

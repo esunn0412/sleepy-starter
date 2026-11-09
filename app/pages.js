@@ -15,7 +15,7 @@ button.secondary{background:transparent;color:var(--accent)}
 .ok{color:var(--ok)}.warn{color:var(--warn)}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
 .bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:4px;min-width:80px}.bar>i{display:block;height:100%;background:var(--accent)}
-.bar.full>i{background:var(--warn)}footer{margin-top:32px;color:var(--muted);font-size:13px}
+.bar.full>i{background:var(--warn)}.clicker{display:flex;gap:6px;margin-top:6px}.clicker button{padding:6px 12px;min-width:44px}ol.options{padding-left:20px}ol.options li{margin:10px 0}footer{margin-top:32px;color:var(--muted);font-size:13px}
 h2{font-size:18px;margin:0 0 12px}h2 .meta{font-weight:400;font-size:14px;margin-left:6px}
 .step{border:1px solid var(--line);border-radius:12px;padding:16px;margin:0 0 16px}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
@@ -135,7 +135,8 @@ function organizerPage({ version, slot, talks, rooms = [], note }) {
 <h1>kubeseat · organizer</h1><p class="sub">KubeCon NA 2026 · ${esc(when(slot.startsAt))} · seats update live.</p>
 ${sourceNote(note)}
 <p id="summary" aria-live="polite"></p>
-<table><thead><tr><th>Room</th><th>Talk</th><th>General</th><th>Accessible</th><th>Waitlist</th><th>Seats</th></tr></thead><tbody id="rows"></tbody></table>
+<p class="meta">At the door: tap +1 as people walk in (−1 as they leave). That live count is what the scheduler sees: a room full at the door gets no new recommendations, and attendees are sent to their backups.</p>
+<div style="overflow-x:auto"><table><thead><tr><th>Room</th><th>Talk</th><th>At the door (live)</th><th>Recommended by kubeseat</th><th>Accessible</th><th>Capacity</th></tr></thead><tbody id="rows"></tbody></table></div>
 <div class="card"><form id="swap"><strong>Move a talk to another room</strong><br>
   <label>Room <select name="a" id="sa"></select></label> ⇄ <label>Room <select name="b" id="sb"></select></label>
   <button>Swap talks</button></form></div>
@@ -144,18 +145,39 @@ const titles = ${JSON.stringify(titles)};
 const roomNames = ${JSON.stringify(roomNames)};
 const bar = (p) => '<span>' + p.used + ' / ' + p.seats + '</span><div class="bar' + (p.used >= p.seats ? ' full' : '') +
   '"><i style="width:' + (p.seats ? Math.min(100, 100 * p.used / p.seats) : 0) + '%"></i></div>';
-let filled = false;
+// One refresh at a time and one pending timer: taps during a refresh queue one more
+// refresh instead of starting extra polling loops.
+let filled = false, loadTimer = null, loading = false, again = false;
+const later = (ms) => { clearTimeout(loadTimer); loadTimer = setTimeout(load, ms); };
 async function load() {
+  if (loading) { again = true; return; }
+  loading = true; clearTimeout(loadTimer);
+  try { await refresh(); } finally {
+    loading = false;
+    if (again) { again = false; load(); }
+  }
+}
+async function refresh() {
   // Don't redraw while an organizer is typing a seat count.
-  if (document.activeElement && document.activeElement.closest('#rows')) return setTimeout(load, 2000);
-  const r = await fetch('/api/rooms');
-  if (!r.ok) { document.getElementById('summary').textContent = 'Seat service unavailable.'; return setTimeout(load, 3000); }
+  if (document.activeElement && document.activeElement.matches('#rows input')) return later(2000);
+  const r = await fetch('/api/rooms').catch(() => null);
+  if (!r || !r.ok) { document.getElementById('summary').textContent = 'Seat service unavailable.'; return later(3000); }
   const d = await r.json();
   document.getElementById('summary').textContent = d.attendees + ' attendees, ' + d.pending + ' waiting for a seat.';
   document.getElementById('rows').innerHTML = d.rooms.map((x) =>
     '<tr><td>' + (roomNames[x.room] || x.room) + (x.stepFree ? ' <span title="step-free">♿</span>' : '') + (x.captions ? ' <span title="captions">CC</span>' : '') + '</td>' +
-    '<td>' + (titles[x.talk] || x.talk) + '</td><td>' + bar(x.general) + '</td><td>' + bar(x.accessible) + '</td><td>' + x.waitlist + '</td>' +
-    '<td><form data-room="' + x.room + '"><label class="meta">General <input type="number" min="0" max="5000" value="' + x.general.seats + '" style="width:5em"></label> <button class="secondary">Set</button></form></td></tr>').join('');
+    '<td>' + (titles[x.talk] || x.talk) + '</td>' +
+    '<td class="door">' + bar({ used: x.door, seats: x.capacity }) +
+      '<div class="clicker"><button class="secondary" data-room="' + x.room + '" data-d="-1" aria-label="one left ' + x.room + '">−1</button>' +
+      '<button data-room="' + x.room + '" data-d="1" aria-label="one in ' + x.room + '">+1</button>' +
+      '<button class="secondary" data-room="' + x.room + '" data-d="10" aria-label="ten in ' + x.room + '">+10</button></div></td>' +
+    '<td>' + bar(x.general) + (x.waitlist ? '<div class="meta">' + x.waitlist + ' waiting</div>' : '') + '</td><td>' + bar(x.accessible) + '</td>' +
+    '<td><form data-room="' + x.room + '"><input type="number" min="0" max="5000" value="' + x.capacity + '" style="width:5em" aria-label="capacity"> <button class="secondary">Set</button></form></td></tr>').join('');
+  document.querySelectorAll('#rows .clicker button').forEach((b) => b.onclick = async () => {
+    await fetch('/api/rooms/' + b.dataset.room + '/door', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ delta: Number(b.dataset.d) }) });
+    load();
+  });
   document.querySelectorAll('#rows form').forEach((f) => f.onsubmit = async (e) => {
     e.preventDefault();
     await fetch('/api/rooms/' + f.dataset.room + '/seats', { method: 'POST', headers: { 'content-type': 'application/json' },
@@ -166,7 +188,7 @@ async function load() {
     const opts = d.rooms.map((x) => '<option value="' + x.room + '">' + (roomNames[x.room] || x.room) + '</option>').join('');
     document.getElementById('sa').innerHTML = opts; document.getElementById('sb').innerHTML = opts; filled = true;
   }
-  setTimeout(load, 2000);
+  later(2000);
 }
 document.getElementById('swap').onsubmit = async (e) => {
   e.preventDefault();
