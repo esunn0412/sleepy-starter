@@ -12,11 +12,17 @@
 //   4. Organizer swaps the deep dive with hall-a. Report again: the waitlist drains.
 
 const base = (process.argv[2] || '').replace(/\/$/, '');
-const N = Math.min(2000, Number(process.argv[3] || 1000));
-const rate = Math.min(50, Number(process.argv[4] || 20));
+const N = Number(process.argv[3] || 1000);
+const rate = Number(process.argv[4] || 20);
 const key = process.env.ORGANIZER_TOKEN || '';
 if (!base.startsWith('http') || !key) {
   console.error('usage: ORGANIZER_TOKEN=... node scripts/load-test.js <url> [N] [rate]');
+  process.exit(1);
+}
+// Reject anything outside the bounds instead of clamping: 0, negative or NaN would
+// otherwise turn into an unthrottled burst.
+if (!Number.isInteger(N) || N < 1 || N > 2000 || !Number.isFinite(rate) || rate <= 0 || rate > 50) {
+  console.error('N must be an integer 1-2000 and rate a number >0 and <=50 (requests/s)');
   process.exit(1);
 }
 
@@ -92,11 +98,15 @@ async function settle(label) {
   const t1 = Date.now();
   const sw = await call('POST', '/api/swap', { a: '250', b: 'hall-a' }, org);
   console.log(`  swap: ${sw.status} ${JSON.stringify(sw.body)} in ${((Date.now() - t1) / 1000).toFixed(1)} s`);
+  if (sw.status !== 200 || !(sw.body?.reseated > 0)) throw new Error(`FAIL: swap did not happen (${sw.status})`);
   const after = await settle('After the swap');
-  // Nobody may lose their place: the swap re-seats people, it must never drop them.
+  // Nobody may lose their place: no attendee dropped, and nobody seated before the swap
+  // pushed back to the waitlist (the seated count must not go down).
   const lost = before.attendees - after.attendees;
-  console.log(lost === 0
-    ? `\nPASS: all ${after.attendees} attendees kept a seat or their waitlist place`
-    : `\nFAIL: ${lost} attendees lost during the swap`);
-  if (lost !== 0) process.exitCode = 1;
+  const unseated = Math.max(0, (before.attendees - before.pending) - (after.attendees - after.pending));
+  const kept = lost === 0 && unseated === 0;
+  console.log(kept
+    ? `\nPASS: all ${after.attendees} attendees kept their place; seated ${before.attendees - before.pending} -> ${after.attendees - after.pending}`
+    : `\nFAIL: ${lost} attendees dropped, ${unseated} fewer seated after the swap`);
+  if (!kept) process.exitCode = 1;
 })().catch((e) => { console.error(e.message); process.exit(1); });
