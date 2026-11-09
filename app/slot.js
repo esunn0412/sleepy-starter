@@ -1,47 +1,24 @@
-// One demo time slot: talks and the rooms they are in. Sample talks written for the
-// demo (not the real KubeCon schedule). scripts/load-talks.js indexes them into
-// Elasticsearch, which scores each attendee against them.
+// One real time slot of KubeCon + CloudNativeCon North America 2026 (Salt Lake City),
+// imported from the public Sessionize schedule by scripts/import-kubecon.js:
+// talks, descriptions, audience levels, tracks, rooms, speakers and slide links.
+// Room seat counts and access features are estimates (not published).
 // Times are UTC ISO strings (shown in America/Denver).
 
-const slot = { id: 'tue-1415', startsAt: '2026-11-10T21:15:00Z' };
+const data = require('./kubecon-slot.json');
 
-const talks = [
-  {
-    id: 'ebpf-net', title: 'eBPF networking without the magic', level: 'Intermediate', track: 'Networking',
-    projects: ['Cilium', 'eBPF', 'Hubble'],
-    abstract: 'Packets, maps and programs: we trace one request through a Cilium-powered cluster to show what eBPF '
-      + 'actually does in the kernel, replacing kube-proxy and iptables. Live demos with Hubble flow logs, network '
-      + 'policy enforcement, and debugging dropped packets with bpftool. You should know how a Kubernetes Service works.',
-  },
-  {
-    id: 'otel-101', title: 'OpenTelemetry for your first service', level: 'Beginner', track: 'Observability',
-    projects: ['OpenTelemetry', 'Prometheus', 'Jaeger'],
-    abstract: 'Never instrumented an app? Start here. We add OpenTelemetry tracing, metrics and logs to a small web '
-      + 'service step by step, send them through the Collector, and read the first trace together. Covers spans, '
-      + 'context propagation, semantic conventions and SLOs. No prior observability experience needed.',
-  },
-  {
-    id: 'sched-deep', title: 'Inside the kube-scheduler framework', level: 'Advanced', track: 'Scheduling',
-    projects: ['Kubernetes', 'Kueue'],
-    abstract: 'Filter, Score, Reserve, Permit, Bind: a deep dive into the scheduling framework and how to write your own '
-      + 'plugin. We cover node affinity, taints and tolerations, inter-pod affinity, topology spread, preemption and '
-      + 'priority, and batch scheduling with Kueue, with benchmarks from clusters running thousands of nodes.',
-  },
-  {
-    id: 'platform-eng', title: 'Platform engineering lessons from year one', level: 'Any', track: 'Platform',
-    projects: ['Backstage', 'Argo CD', 'Crossplane'],
-    abstract: 'What we got wrong building an internal developer platform: golden paths in Backstage, GitOps with Argo CD, '
-      + 'and self-service infrastructure with Crossplane. Team topologies, measuring developer experience, and why '
-      + 'the platform is a product. Useful whether you build platforms or use one.',
-  },
-];
+// CNCF projects and core tech named in a talk: shown as "mentions …" and boosted in search.
+const PROJECTS = ['Kubernetes', 'Argo CD', 'Argo', 'Backstage', 'Cilium', 'eBPF', 'Envoy', 'Istio', 'Linkerd',
+  'OpenTelemetry', 'Prometheus', 'Jaeger', 'Grafana', 'Crossplane', 'Kueue', 'KEDA', 'Karpenter', 'Knative',
+  'Kyverno', 'Falco', 'Sigstore', 'SPIFFE', 'OPA', 'Helm', 'Flux', 'containerd', 'CoreDNS', 'etcd', 'Gateway API',
+  'vLLM', 'KServe', 'Kubeflow', 'Ray', 'Spark', 'Kafka', 'Dapr', 'wasmCloud', 'Rook', 'Vitess', 'TiKV', 'CloudNativePG',
+  'Wazuh', 'GPU', 'DRA', 'MCP', 'LLM'];
 
-// seats includes accessibleSeats (the protected pool).
-const rooms = [
-  { id: '150', talk: 'ebpf-net', seats: 40, accessibleSeats: 4, stepFree: true, captions: true },
-  { id: '151', talk: 'otel-101', seats: 25, accessibleSeats: 2, stepFree: false, captions: true },
-  { id: '250', talk: 'sched-deep', seats: 15, accessibleSeats: 2, stepFree: true, captions: false },
-  { id: 'hall-a', talk: 'platform-eng', seats: 120, accessibleSeats: 10, stepFree: true, captions: true },
-];
+function projectsIn(text) {
+  return PROJECTS.filter((p) => new RegExp(`(^|[^A-Za-z])${p.replace(/ /g, '\\s*')}([^A-Za-z]|$)`, 'i').test(text));
+}
 
-module.exports = { slot, talks, rooms };
+const slot = data.slot;
+const talks = data.talks.map((t) => ({ ...t, projects: projectsIn(`${t.title} ${t.abstract}`) }));
+const rooms = data.rooms;
+
+module.exports = { slot, talks, rooms, note: data.note };

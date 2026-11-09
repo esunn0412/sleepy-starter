@@ -13,7 +13,7 @@ const { slot, talks, rooms } = require(path.join(app, 'slot'));
     console.error('Set ELASTIC_URL and ELASTIC_API_KEY first.');
     process.exit(1);
   }
-  await elastic.loadTalks(slot, talks, rooms);
+  await elastic.loadTalks(slot, talks, rooms, (m) => console.log('  ' + m));
   console.log(`indexed ${talks.length} talks for slot ${slot.id} into ${elastic.INDEX}`);
 })().catch((e) => {
   console.error(e.message);

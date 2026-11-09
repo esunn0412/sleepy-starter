@@ -1,0 +1,275 @@
+{
+  "source": "https://kubecon-cloudnativecon-north-america-2026.sessionize.com/api/schedule",
+  "importedAt": "2026-11-09T22:30:23.414Z",
+  "note": "Talks, levels, tracks, rooms, speakers and slides are from the public KubeCon NA 2026 schedule. Room seats and access features are estimates.",
+  "slot": {
+    "id": "kcna26-11101130",
+    "startsAt": "2026-11-10T18:30:00.000Z"
+  },
+  "talks": [
+    {
+      "id": "1250350",
+      "title": "Saturated by Design - Maximizing Cluster Allocation in On-Premises Kubernetes",
+      "abstract": "On-premises compute is inelastic, and the costs are mostly up-front. Yet workload demands and hardware health can change at any time. How do you make the most of your on-premises investments without risking capacity overruns and potential outages?\n\nWell, Karpenter and Cluster Autoscaler work great for right-sizing cloud. So what if we took their main principle and inverted it - scaling the workloads to fit the cluster instead?\n\nGetting there required rethinking how pods compete for space, and how cluster capacity is modeled. The Trade Desk tackled both with custom scheduler plugins and a new horizontal scaler. This talk covers the techniques, tradeoffs, and lessons learned along the way.",
+      "level": "Advanced",
+      "track": "Operations + Performance",
+      "speakers": [
+        "Dakota Sullivan",
+        "Isaac Wilson"
+      ],
+      "slidesUrl": "https://sessionize.com/download/lzacsej~ssiTLYz6ZFMk7YCKsBnXyK.pdf~saturated-by-design.pdf",
+      "url": "https://kubecon-cloudnativecon-north-america-2026.sessionize.com/session/1250350"
+    },
+    {
+      "id": "1202489",
+      "title": "Securing Rural Colorado with Open Source: Running a Student-Led SOC on Kubernetes",
+      "abstract": "When a previous supplier dropped support for Colorado in the spring of 2024, the Cybersecurity Center at Metropolitan State University of Denver needed to build a replacement quickly. \n\nWhat started as four virtual machines scaled into a multi-cluster Kubernetes platform. Keycloak for multi-tenant identity, ArgoCD for GitOps, OPA Gatekeeper for policy, Envoy Gateway for traffic management, and cert-manager for TLS. All running in production for roughly $1,000 a month.\n\nThe core SOC runs on OpenSearch with Fluent Bit and Suricata, where student security analysts investigate real threats from live data. Student developers maintain the platform infrastructure itself, contributing to GitOps workflows and operations. Both groups gain hands-on experience with CNCF projects used in production worldwide.\n\nThis talk covers architecture decisions, the VM-to-Kubernetes migration, how we built a community around students and underserved organizations, and the mistakes made along the way.",
+      "level": "Any",
+      "track": "Cloud Native Experience",
+      "speakers": [
+        "Maciej Wal"
+      ],
+      "slidesUrl": "https://sessionize.com/download/cilfaqce~DqgEynm7yGwrNiNFUbvGpX.pdf~securing-rural-colorado-kubecon-na-2026.pdf",
+      "url": "https://kubecon-cloudnativecon-north-america-2026.sessionize.com/session/1202489"
+    },
+    {
+      "id": "1246200",
+      "title": "Ask Your Platform: Putting AI to Work Where the Questions Live",
+      "abstract": "Every platform team has the same backlog: questions. Developers want to know what's happening in their namespace. On-call engineers want to know where to look first. The answers exist, just not fast.\n\nMost advice about AI starts with the technology. We started with the questions. We looked at where people already go for answers and put AI there, inside the work we were already doing. Investigations that used to take days now take hours.\n\nThis talk shows what that looked like in practice and how to spot the same opportunities on your own platform. You'll leave knowing where AI fits in platform engineering work, where it doesn't, and with the confidence to start. No AI background needed.",
+      "level": "Any",
+      "track": "AI Inference + Agentic",
+      "speakers": [
+        "Anton Alexander",
+        "Scott Adams"
+      ],
+      "slidesUrl": "https://sessionize.com/download/itwavpeu~KoQTNM1fhMA3oPAQZtwvvF.pdf~kubecon-ask-your-platform-pdf.pdf",
+      "url": "https://kubecon-cloudnativecon-north-america-2026.sessionize.com/session/1246200"
+    },
+    {
+      "id": "1249749",
+      "title": "So You Want to Build a Platform? You Probably Already Have One",
+      "abstract": "Everyone wants a fancy internal developer platform with all the bells and whistles. Most companies already have one. They just haven't productized it yet. The tooling needs some love.\n\nThose Tofu modules you worked hard on, all the Helm charts you are maintaining and the reusable CI/CD pipelines? There's your platform, it's just a little fragmented, not intent driven and the developer experience could definitely be improved...\n\nYou're not building from zero. The harder job is taking what you already have, slapping a fresh coat of paint on it, and turning it into an intentional product with happy users and golden paths people want to follow! \n\nThis talk is about that shift. From scattered, fragmented tooling to a platform teams prefer to use over the old way. How to scope your first problem, why success criteria and platform principles need to come before code, and how to measure if any of this is worth the hassle.",
+      "level": "Any",
+      "track": "Platform Engineering",
+      "speakers": [
+        "Juho Syrjänen"
+      ],
+      "slidesUrl": "https://sessionize.com/download/idhainge~N6jHKFg7jBJtNRqD9ACbLA.pdf~so-you-want-to-build-a-platform_-10.pdf",
+      "url": "https://kubecon-cloudnativecon-north-america-2026.sessionize.com/session/1249749"
+    },
+    {
+      "id": "1227395",
+      "title": "Why We Bet the Data Platform on Kubernetes - And How AI Is Changing How We Operate It",
+      "abstract": "Kubernetes has quietly become the default substrate for petabyte-scale data processing. Salesforce, Pinterest, Airbnb, and Apple all run native Spark, Flink, Trino, StarRocks, and Iceberg on Kubernetes at a scale the platform was never designed for.\n\nThis panel of end-user operators talks about two things data leaders keep asking about. First, what does it actually take to run large-scale data on Kubernetes? Shuffle bottlenecks and Apache Celeborn, stateful upgrades, multi-tenant scheduling with YuniKorn and Kueue, Iceberg storage layouts, mixed CPU and GPU. Each panelist shares what broke at scale and how they fixed it.\n\nSecond, how are AI agents changing day-2 operations? Troubleshooting agents for Spark and Flink, MCP servers for Spark History Server, agentic upgrade planning, autonomous tuning, AI-driven governance and lineage. Where are teams seeing real productivity gains, and where do agents still get it wrong?\n\nProduction stories, real disagreements, no vendor pitches.",
+      "level": "Beginner",
+      "track": "Data Processing + Storage",
+      "speakers": [
+        "Vara Bonthu",
+        "Ying Xiong",
+        "Rainie Li",
+        "Damon Cortesi",
+        "Padma Aradhyula"
+      ],
+      "slidesUrl": "https://sessionize.com/download/iyibras~Mg4JfCQVtfPLiyyprteXPK.pdf~kubecon_na_2026_data_platform_panel.pdf",
+      "url": "https://kubecon-cloudnativecon-north-america-2026.sessionize.com/session/1227395"
+    },
+    {
+      "id": "1233585",
+      "title": "Your Agent Needs a Platform: Cloud Native Infrastructure for Multi-Agent AI Systems",
+      "abstract": "Everyone is building AI agents. Almost no one is thinking about the infrastructure layer underneath them.\n\nThis talk reframes AI agents as cloud native workloads and shows how to build a production-grade multi-agent platform on Kubernetes. Topics covered: modeling agents as K8s custom resources, durable execution and retry semantics with Dapr, event-driven inter-agent messaging with NATS, and end-to-end observability using OpenTelemetry traces across agent hops.\n\nWe go beyond LangGraph demos to tackle the hard problems: failure recovery, agent scheduling, concurrency limits, and audit logging — the same concerns we solved for microservices, now applied to agents.",
+      "level": "Advanced",
+      "track": "AI Inference + Agentic",
+      "speakers": [
+        "Soham Ghadge"
+      ],
+      "slidesUrl": "https://sessionize.com/download/ifyasseo~H5DCzp1pPcGGvWXTbxRpq3.pptx~your_agent_needs_a_platform_kubecon_na_2026.pptx",
+      "url": "https://kubecon-cloudnativecon-north-america-2026.sessionize.com/session/1233585"
+    },
+    {
+      "id": "1244710",
+      "title": "Will Your Gateway Leave You High and Dry?",
+      "abstract": "A gateway that looks flawless in a demo can collapse under production load. Routes churn, connection limits get pushed to the brink, and the architectural trade-offs hiding beneath modern gateway controllers suddenly matter.\nThis session moves beyond \"Hello World\" to expose what actually breaks at scale. Drawing from open-source benchmarking data across Envoy Gateway, Nginx, Agentgateway, Istio, and more, we dig into real failure modes: dropped connections during zero-downtime route updates, control planes consuming 100x more resources under churn, and latency spikes during route propagation.\n\nAs CNCF maintainers, we bring a data-driven framework for evaluating gateway implementations from real systems under stress.\nYou'll leave with empirical benchmarks and concrete strategies for selecting and tuning a Gateway API architecture that holds up in the reality of day-two operations.",
+      "level": "Any",
+      "track": "Connectivity",
+      "speakers": [
+        "John Howard",
+        "Mitch Connors"
+      ],
+      "slidesUrl": null,
+      "url": "https://kubecon-cloudnativecon-north-america-2026.sessionize.com/session/1244710"
+    },
+    {
+      "id": "1246765",
+      "title": "One Recipe, Five Clouds, One Query: Portable GPU Configuration with a Queryable Audit Layer",
+      "abstract": "Every cloud ships its own GPU taints, network plugin, storage class, and \"don't forget this annotation\" footgun. Most platform teams respond by forking their config per provider; and then nobody can answer \"what driver version is actually deployed to prod in GKE?\" without running Helm or kubectl against a live cluster.\n\nIn this talk, we'll show a criteria-driven recipe model (service × accelerator × OS × intent × platform) that generates Helm bundles for EKS, GKE, AKS, OCI, and CoreWeave from one library and a jq-style selector grammar that queries the hydrated result like a database. Live: three commands, three providers, one diff exposing exactly what's portable. Then one-line command answers the same question across every environment without touching a cluster.\n\nAttendees leave with a pattern for cross-cloud GPU configuration that auditors, FinOps, and SRE can actually inspect: no per-cloud forks, no write-only GitOps repos.",
+      "level": "Any",
+      "track": "Platform Engineering",
+      "speakers": [
+        "Christopher Haar",
+        "Yuan Chen"
+      ],
+      "slidesUrl": "https://sessionize.com/download/ilzalceq~DjMKKJqakhubjrUrHgei2C.pdf~aicr-kubecon-na-2026-one-recipe-five-clouds-one-query-slides-1-30.pdf",
+      "url": "https://kubecon-cloudnativecon-north-america-2026.sessionize.com/session/1246765"
+    },
+    {
+      "id": "1247249",
+      "title": "Mythos vs Maintainers: Drowning in the Vulnerability Tsunami",
+      "abstract": "Open source maintainers are facing a double assault. On one side, threat actors like TeamPCP are leveraging LLMs to scale attacks against well-known GitHub Actions misconfigurations, and propagating credential-stealing worms through ecosystems like PyPI and npm. On the other side, well-meaning security researchers are using those same LLMs to hunt for and report issues in good-faith, burying projects under a flood of (at times low-quality) vulnerability reports.\nIn this joint talk, we assume the roles of a combative offensive security researcher and a defensive open source maintainer to grapple with the tsunami of AI slop and irresponsible public disclosures using examples from in-toto’s Witness project. We will:\n+ Recon: use LLMs for targeted vulnerability discovery and exploit writing\n+ Report: attempt to communicate & disclose the discovery\n+ Remediate: provide actionable solutions and actual code via private PRs\n+ Reinforce: use AI to proactively secure the project",
+      "level": "Any",
+      "track": "Security",
+      "speakers": [
+        "Fabian Kammel",
+        "John Kjell"
+      ],
+      "slidesUrl": null,
+      "url": "https://kubecon-cloudnativecon-north-america-2026.sessionize.com/session/1247249"
+    },
+    {
+      "id": "1249351",
+      "title": "Next Generation DevOps: Reshaping the Cloud Native DevOps Infinity Loop with AI",
+      "abstract": "Plan, Code, Build, Test, Release, Deploy, Operate, Monitor, and repeat. This is the DevOps infinity loop the industry has been accustomed to since 2013, and it has symbiotically evolved alongside Cloud Native, but AI is reshaping every phase. This session introduces “Next Generation DevOps”; a framework for embedding AI in each phase of the DevOps infinity loop to accelerate & automate and where humans remain in the loop for accountability: architectural design record generation, code assistance, dependency agent, pipelines as agentic targets, generated TDD & unit tests, GitOps, rollout agent, canary plan generation, SRE runbook agent, anomaly and postmortem agent. Attendees leave with a framework for infusing AI into DevOps in the context of Cloud Native, including ArgoCD, Tekton, Kubernetes, Prometheus, OTEL, OPA, and more.",
+      "level": "Beginner",
+      "track": "Cloud Native Novice",
+      "speakers": [
+        "Rey Lejano"
+      ],
+      "slidesUrl": null,
+      "url": "https://kubecon-cloudnativecon-north-america-2026.sessionize.com/session/1249351"
+    },
+    {
+      "id": "1250326",
+      "title": "Autoscaling Reality Check: The Hands-On HTTP Optimization Challenge",
+      "abstract": "There is a massive gap between how easy autoscaling looks in vendor demos and how difficult it is to optimize in the real world. Many users assume that simply deploying an HPA is enough, but have no idea how fast can the Pods really scale when a traffic hits.\n\nYou'll be handed a pre-configured autoscaling setup for an HTTP app. Then, we will hit the cluster with a 4-minute benchmark - scenario mixing fast/light and heavy/slow requests.\n\nThe catch? Your initial results will be terrible. Our goal sounds simple: improve the system's efficiency score.\n\nAs we iterate through several rounds, you will run into real-world roadblocks. You'll discover that CPU doesn't correlate with your throughput, and maybe the application is leaking a bit of memory.\n\nWe will conclude with a friendly leaderboard to see who achieved the best results. You will walk away knowing the brutal reality of Pod-level autoscaling, and exactly how to bridge the gap between a basic installation and production efficiency.",
+      "level": "Any",
+      "track": "📚 Tutorials",
+      "speakers": [
+        "David Pech"
+      ],
+      "slidesUrl": "https://sessionize.com/download/igbakden~UAWy72zE1xbxa9soESLmiu.pdf~autoscaling-reality-check.pdf",
+      "url": "https://kubecon-cloudnativecon-north-america-2026.sessionize.com/session/1250326"
+    }
+  ],
+  "rooms": [
+    {
+      "id": "grand-ballroom-ace",
+      "name": "Grand Ballroom ACE (Salt Palace, Level 1)",
+      "venue": "Salt Palace",
+      "talk": "1250350",
+      "estimated": true,
+      "seats": 900,
+      "accessibleSeats": 18,
+      "stepFree": true,
+      "captions": true
+    },
+    {
+      "id": "grand-ballroom-bdf",
+      "name": "Grand Ballroom BDF (Salt Palace, Level 1)",
+      "venue": "Salt Palace",
+      "talk": "1202489",
+      "estimated": true,
+      "seats": 900,
+      "accessibleSeats": 18,
+      "stepFree": true,
+      "captions": true
+    },
+    {
+      "id": "grand-ballroom-h",
+      "name": "Grand Ballroom H (Salt Palace, Level 1)",
+      "venue": "Salt Palace",
+      "talk": "1246200",
+      "estimated": true,
+      "seats": 500,
+      "accessibleSeats": 10,
+      "stepFree": true,
+      "captions": false
+    },
+    {
+      "id": "grand-ballroom-gi",
+      "name": "Grand Ballroom GI (Salt Palace, Level 1)",
+      "venue": "Salt Palace",
+      "talk": "1249749",
+      "estimated": true,
+      "seats": 500,
+      "accessibleSeats": 10,
+      "stepFree": true,
+      "captions": false
+    },
+    {
+      "id": "151",
+      "name": "151 (Salt Palace, Level 1)",
+      "venue": "Salt Palace",
+      "talk": "1227395",
+      "estimated": true,
+      "seats": 120,
+      "accessibleSeats": 2,
+      "stepFree": true,
+      "captions": false
+    },
+    {
+      "id": "255-bc",
+      "name": "255 BC (Salt Palace, Level 2)",
+      "venue": "Salt Palace",
+      "talk": "1233585",
+      "estimated": true,
+      "seats": 250,
+      "accessibleSeats": 5,
+      "stepFree": true,
+      "captions": false
+    },
+    {
+      "id": "255-ef",
+      "name": "255 EF (Salt Palace, Level 2)",
+      "venue": "Salt Palace",
+      "talk": "1244710",
+      "estimated": true,
+      "seats": 250,
+      "accessibleSeats": 5,
+      "stepFree": true,
+      "captions": false
+    },
+    {
+      "id": "salt-lake-ballroom-c-hyatt",
+      "name": "Salt Lake Ballroom C (Hyatt Regency, Level 2)",
+      "venue": "Hyatt Regency",
+      "talk": "1246765",
+      "estimated": true,
+      "seats": 400,
+      "accessibleSeats": 8,
+      "stepFree": true,
+      "captions": false
+    },
+    {
+      "id": "salt-lake-ballroom-de-hyatt",
+      "name": "Salt Lake Ballroom DE (Hyatt Regency, Level 2)",
+      "venue": "Hyatt Regency",
+      "talk": "1247249",
+      "estimated": true,
+      "seats": 400,
+      "accessibleSeats": 8,
+      "stepFree": true,
+      "captions": false
+    },
+    {
+      "id": "regency-ballroom-cd-hyatt",
+      "name": "Regency Ballroom CD (Hyatt Regency, Level 4)",
+      "venue": "Hyatt Regency",
+      "talk": "1249351",
+      "estimated": true,
+      "seats": 400,
+      "accessibleSeats": 8,
+      "stepFree": true,
+      "captions": false
+    },
+    {
+      "id": "regency-ballroom-a-hyatt",
+      "name": "Regency Ballroom A (Hyatt Regency, Level 4)",
+      "venue": "Hyatt Regency",
+      "talk": "1250326",
+      "estimated": true,
+      "seats": 400,
+      "accessibleSeats": 8,
+      "stepFree": true,
+      "captions": false
+    }
+  ]
+}

@@ -5,11 +5,11 @@
 //
 // Hard limits: at most 2,000 attendees, at most 50 requests/second.
 // Phases:
-//   1. Organizer sets realistic room sizes (general seats).
-//   2. N attendees arrive at `rate`/s: 30% must-see the scheduler deep dive (small room 250),
+//   1. Read the slot's real talks and rooms from the app.
+//   2. N attendees arrive at `rate`/s: 30% must-see the talk in the smallest room,
 //      ~5% need an accessible seat, ~3% need step-free access, the rest have weighted interests.
 //   3. Report: seated, waiting, by room.
-//   4. Organizer swaps the deep dive with hall-a. Report again: the waitlist drains.
+//   4. Organizer swaps that talk into the largest room. Report again: the waitlist drains.
 
 const base = (process.argv[2] || '').replace(/\/$/, '');
 const N = Number(process.argv[3] || 1000);
@@ -37,14 +37,15 @@ async function call(method, path, body, headers = { "content-type": "application
 let seed = 42;
 const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
 const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
-const talks = ['ebpf-net', 'otel-101', 'sched-deep', 'platform-eng'];
+let talks = [];
+let popular = null; // the talk in the smallest room: everyone wants it
 
 function attendee(i) {
   const needs = {};
   if (rnd() < 0.05) needs.accessibleSeat = true;
   if (rnd() < 0.03) needs.stepFree = true;
   if (i % 10 < 3) {
-    return { mustSee: 'sched-deep', needs, interests: [{ talk: 'sched-deep', weight: 100 }] };
+    return { mustSee: popular, needs, interests: [{ talk: popular, weight: 100 }] };
   }
   const n = 1 + Math.floor(rnd() * 3);
   const chosen = [...new Set(Array.from({ length: n }, () => pick(talks)))];
@@ -55,7 +56,7 @@ async function report(label) {
   const { body } = await call('GET', '/api/rooms');
   console.log(`\n${label}: ${body.attendees} attendees, ${body.pending} waiting`);
   for (const r of body.rooms) {
-    console.log(`  room ${r.room.padEnd(7)} ${r.talk.padEnd(13)} general ${String(r.general.used).padStart(4)}/${String(r.general.seats).padEnd(5)} accessible ${r.accessible.used}/${r.accessible.seats}  waitlist ${r.waitlist}`);
+    console.log(`  room ${r.room.padEnd(28)} ${r.talk.padEnd(8)} general ${String(r.general.used).padStart(4)}/${String(r.general.seats).padEnd(5)} accessible ${r.accessible.used}/${r.accessible.seats}  waitlist ${r.waitlist}`);
   }
   return body;
 }
@@ -74,11 +75,13 @@ async function settle(label) {
 
 (async () => {
   console.log(`Load test: ${N} attendees at ${rate}/s against ${base}`);
-  for (const [room, seats] of [['150', 360], ['151', 230], ['250', 110], ['hall-a', 1400]]) {
-    const r = await call('POST', `/api/rooms/${room}/seats`, { pool: 'general', seats }, org);
-    if (r.status !== 200) throw new Error(`set seats ${room}: ${r.status} ${JSON.stringify(r.body)}`);
-  }
-  await report('Rooms set');
+  talks = (await call('GET', '/api/talks')).body.talks.map((t) => t.id);
+  const start = await report('Rooms (seat counts are estimates)');
+  const bySize = [...start.rooms].sort((a, b) => a.general.seats - b.general.seats);
+  const small = bySize[0];
+  const big = bySize[bySize.length - 1];
+  popular = small.talk;
+  console.log(`\nPopular talk: ${popular} in the smallest room (${small.room}, ${small.general.seats} seats); swap target: ${big.room} (${big.general.seats} seats)`);
 
   const t0 = Date.now();
   let ok = 0, failed = 0;
@@ -94,10 +97,10 @@ async function settle(label) {
 
   const before = await settle('After arrivals');
 
-  console.log('\nOrganizer: move "Inside the kube-scheduler framework" (room 250) to hall-a');
+  console.log(`\nOrganizer: move talk ${popular} from ${small.room} to ${big.room}`);
   const t1 = Date.now();
   // The swap re-seats everyone in both rooms one by one (~40 ms each live): allow 2 min.
-  const sw = await call('POST', '/api/swap', { a: '250', b: 'hall-a' }, org, 120000);
+  const sw = await call('POST', '/api/swap', { a: small.room, b: big.room }, org, 120000);
   console.log(`  swap: ${sw.status} ${JSON.stringify(sw.body)} in ${((Date.now() - t1) / 1000).toFixed(1)} s`);
   if (sw.status !== 200 || !(sw.body?.reseated > 0)) throw new Error(`FAIL: swap did not happen (${sw.status})`);
   const after = await settle('After the swap');

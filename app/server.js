@@ -7,7 +7,7 @@ const { trace } = require('@opentelemetry/api');
 const seats = require('./seats');
 const metrics = require('./metrics');
 const { untraced } = require('./untraced');
-const { slot, talks, rooms } = require('./slot');
+const { slot, talks, rooms, note } = require('./slot');
 const { attendeePage, organizerPage } = require('./pages');
 const elastic = require('./elastic');
 const { githubProfileText } = require('./github');
@@ -117,7 +117,7 @@ async function route(req, res, url) {
     if (id) span.setAttribute('kubeseat.attendee.id', id[1]);
   }
   if (p === '/healthz' || p === '/readyz') return send(res, 200, 'ok\n', 'text/plain');
-  if (p === '/' && req.method === 'GET') return send(res, 200, attendeePage({ version, slot, talks, scoring: elastic.enabled() }), 'text/html; charset=utf-8');
+  if (p === '/' && req.method === 'GET') return send(res, 200, attendeePage({ version, slot, talks, rooms, note, scoring: elastic.enabled() }), 'text/html; charset=utf-8');
   if (p === '/organizer/login' && req.method === 'POST') {
     const key = (await readForm(req)).get('key') || '';
     if (!sameSecret(key)) return send(res, 401, loginPage(organizerKey ? 'Wrong key.' : 'Organizer controls are not configured.'), 'text/html; charset=utf-8');
@@ -129,7 +129,7 @@ async function route(req, res, url) {
   }
   if (p === '/organizer' && req.method === 'GET') {
     if (!isOrganizer(req)) return send(res, 200, loginPage('Enter the organizer key to manage rooms.'), 'text/html; charset=utf-8');
-    return send(res, 200, organizerPage({ version, slot, talks }), 'text/html; charset=utf-8');
+    return send(res, 200, organizerPage({ version, slot, talks, rooms, note }), 'text/html; charset=utf-8');
   }
   // Everything below that changes rooms is organizer-only.
   const organizerWrite = req.method === 'POST' && (p === '/api/swap' || /^\/api\/rooms\//.test(p));

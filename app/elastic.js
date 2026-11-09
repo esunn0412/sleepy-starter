@@ -40,16 +40,45 @@ const mappings = {
     track: { type: 'keyword' },
     level: { type: 'keyword' },
     room: { type: 'keyword' },
+    // Text of the speakers' own slide deck, extracted by Elastic's attachment processor.
+    slides: { type: 'text' },
+    slides_url: { type: 'keyword', index: false },
+    speakers: { type: 'text' },
   },
 };
 
-async function loadTalks(slot, talks, rooms) {
+const MAX_SLIDES_BYTES = 25 * 1024 * 1024;
+
+// Extract a slide deck's text with Elastic's attachment processor (Apache Tika):
+// PDF or PPTX in, plain text out. remove_binary keeps the file out of Elasticsearch,
+// and indexed_chars caps the text.
+async function slideText(slidesUrl) {
+  if (!slidesUrl) return '';
+  const res = await fetch(slidesUrl, { signal: AbortSignal.timeout(30000) });
+  if (!res.ok) return '';
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length > MAX_SLIDES_BYTES) return '';
+  const out = await es('POST', '/_ingest/pipeline/_simulate', {
+    pipeline: {
+      processors: [{ attachment: { field: 'data', target_field: 'deck', indexed_chars: 30000, remove_binary: true } }],
+    },
+    docs: [{ _source: { data: buf.toString('base64') } }],
+  });
+  return (out.docs?.[0]?.doc?._source?.deck?.content || '').replace(/\s+/g, ' ').trim();
+}
+
+async function loadTalks(slot, talks, rooms, log = () => {}) {
   const exists = await fetch(`${url}/${INDEX}`, { method: 'HEAD', headers: { authorization: `ApiKey ${apiKey}` } });
   if (exists.status === 404) await es('PUT', `/${INDEX}`, { mappings });
+  else await es('PUT', `/${INDEX}/_mapping`, { properties: { slides: mappings.properties.slides, slides_url: mappings.properties.slides_url, speakers: mappings.properties.speakers } });
   for (const t of talks) {
+    const slides = await slideText(t.slidesUrl).catch(() => '');
+    log(`${t.id}: ${slides.length} chars of slide text`);
     await es('PUT', `/${INDEX}/_doc/${t.id}?refresh=wait_for`, {
       id: t.id, slot: slot.id, title: t.title, abstract: t.abstract,
-      content: `${t.title}. ${t.abstract}`,
+      // Meaning comes from the description and the first part of the deck.
+      content: `${t.title}. ${t.abstract}${slides ? `\n\nSlides: ${slides.slice(0, 8000)}` : ''}`,
+      slides, slides_url: t.slidesUrl, speakers: (t.speakers || []).join(', '),
       projects: t.projects, track: t.track, level: t.level,
       room: rooms.find((r) => r.talk === t.id)?.id,
     });
@@ -84,7 +113,7 @@ async function scoreTalks(slotId, profileText, level = 'Intermediate') {
             weight: 0.5, normalizer: 'minmax',
           },
           {
-            retriever: { standard: { query: { bool: { filter, must: { multi_match: { query: text, fields: ['title^2', 'abstract', 'projects^3'] } } } } } },
+            retriever: { standard: { query: { bool: { filter, must: { multi_match: { query: text, fields: ['title^2', 'abstract', 'projects^3', 'slides'] } } } } } },
             weight: 0.5, normalizer: 'minmax',
           },
         ],
@@ -94,6 +123,7 @@ async function scoreTalks(slotId, profileText, level = 'Intermediate') {
       fields: {
         content: { type: 'semantic', number_of_fragments: 1 },
         abstract: { number_of_fragments: 1, fragment_size: 140 },
+        slides: { number_of_fragments: 1, fragment_size: 120 },
         projects: {},
       },
       pre_tags: ['<mark>'], post_tags: ['</mark>'],
@@ -131,7 +161,9 @@ function whyText(hit, matched, levelFit, level) {
   const parts = [];
   if (matched.length) parts.push(`mentions ${matched.join(', ')}`);
   const frag = hit.highlight?.abstract?.[0] || hit.highlight?.content?.[0];
-  if (frag) parts.push(`"…${stripTags(frag).trim()}…"`);
+  if (frag) parts.push(`"…${stripTags(frag).replace(/\s+/g, " ").trim()}…"`);
+  const deck = hit.highlight?.slides?.[0];
+  if (deck) parts.push(`in the slides: "…${stripTags(deck).replace(/\s+/g, " ").trim()}…"`);
   if (levelFit < 1) parts.push(`${hit._source.level} talk, you said ${level}`);
   return parts.join(' · ');
 }
