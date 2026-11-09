@@ -8,10 +8,14 @@ const seats = require('./seats');
 const metrics = require('./metrics');
 const { untraced } = require('./untraced');
 const { slot, talks, rooms, note } = require('./slot');
-const { attendeePage, organizerPage } = require('./pages');
+const { attendeePage, organizerPage, attendeeScript } = require('./pages');
 const elastic = require('./elastic');
 const { githubProfileText } = require('./github');
 const { toYaml } = require('./yaml');
+
+// pdf.js 3.11.174 (Apache-2.0, vendor/) for in-browser resume reading: served by us, not a CDN.
+const pdfjsCache = {};
+const pdfjsFile = (name) => (pdfjsCache[name] ??= require('node:fs').readFileSync(require('node:path').join(__dirname, 'vendor', name), 'utf8'));
 
 const port = Number(process.env.PORT || 8080);
 const version = process.env.APP_VERSION || 'dev';
@@ -117,6 +121,9 @@ async function route(req, res, url) {
     if (id) span.setAttribute('kubeseat.attendee.id', id[1]);
   }
   if (p === '/healthz' || p === '/readyz') return send(res, 200, 'ok\n', 'text/plain');
+  const vendor = p.match(/^\/vendor\/(pdf(?:\.worker)?\.min\.js)$/);
+  if (vendor && req.method === 'GET') return send(res, 200, pdfjsFile(vendor[1]), 'text/javascript; charset=utf-8');
+  if (p === '/attendee.js' && req.method === 'GET') return send(res, 200, attendeeScript, 'text/javascript; charset=utf-8');
   if (p === '/' && req.method === 'GET') return send(res, 200, attendeePage({ version, slot, talks, rooms, note, scoring: elastic.enabled() }), 'text/html; charset=utf-8');
   if (p === '/organizer/login' && req.method === 'POST') {
     const key = (await readForm(req)).get('key') || '';
@@ -136,19 +143,38 @@ async function route(req, res, url) {
   if (organizerWrite && !isOrganizer(req)) return send(res, 401, { error: 'organizer sign-in required' });
   if (p === '/api/talks') return send(res, 200, { version, slot, talks, scoring: elastic.enabled() });
 
+  // Public GitHub signal, fetched once per username so re-scoring doesn't spend the shared
+  // GitHub rate limit. Returned to the browser only; never stored or logged.
+  if (p === '/api/profile/github' && req.method === 'POST') {
+    const text = await githubProfileText(String((await readJson(req)).username || '').trim().replace(/^@/, '')).catch(() => '');
+    span?.setAttribute('kubeseat.profile.github_used', !!text);
+    if (!text) return send(res, 404, { error: "We couldn't read public repos for that GitHub username." });
+    return send(res, 200, { text: text.slice(0, 3000) });
+  }
+
   // Score this person against the slot's talks with Elasticsearch. The profile text is
   // used for this query only: never stored, indexed or logged.
   if (p === '/api/score' && req.method === 'POST') {
     if (!elastic.enabled()) return send(res, 503, { error: 'scoring unavailable' });
     const body = await readJson(req);
     const level = ['Beginner', 'Intermediate', 'Advanced'].includes(body.level) ? body.level : 'Intermediate';
+    // Quick-pick topic chips, free text, and resume text (extracted and scrubbed in the browser;
+    // the file itself never reaches us). All of it is query-only.
+    const topics = (Array.isArray(body.topics) ? body.topics : [])
+      .map((t) => String(t).slice(0, 40)).filter(Boolean).slice(0, 20);
     const bio = String(body.bio || '').slice(0, 2000);
-    const gh = body.github ? await githubProfileText(String(body.github)).catch(() => '') : '';
-    const text = [bio, gh].filter(Boolean).join('. ');
-    if (!text.trim()) return send(res, 400, { error: 'tell us a little about yourself, or a GitHub username' });
+    const resume = String(body.resume || '').slice(0, 3000);
+    const ghText = String(body.githubText || '').slice(0, 3000);
+    const gh = ghText || (body.github ? await githubProfileText(String(body.github)).catch(() => '') : '');
+    const text = [topics.join(', '), bio, gh, resume].filter(Boolean).join('. ');
+    if (!text.trim()) {
+      return send(res, 400, { error: body.github ? "We couldn't read public repos for that GitHub username." : 'Pick a topic, add your GitHub, or upload a resume.' });
+    }
     span?.setAttribute('kubeseat.profile.github_used', !!gh);
+    span?.setAttribute('kubeseat.profile.resume_used', !!resume);
+    span?.setAttribute('kubeseat.profile.topic_count', topics.length);
     const scores = await elastic.scoreTalks(slot.id, text, level);
-    return send(res, 200, { level, githubUsed: !!gh, scores });
+    return send(res, 200, { level, githubUsed: !!gh, githubTried: !!body.github, scores });
   }
 
   if (p === '/api/attendees' && req.method === 'POST') {
