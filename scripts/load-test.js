@@ -28,8 +28,8 @@ if (!Number.isInteger(N) || N < 1 || N > 2000 || !Number.isFinite(rate) || rate 
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const org = { 'content-type': 'application/json', 'x-organizer-token': key };
-async function call(method, path, body, headers = { 'content-type': 'application/json' }) {
-  const r = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(15000) });
+async function call(method, path, body, headers = { "content-type": "application/json" }, timeoutMs = 15000) {
+  const r = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(timeoutMs) });
   return { status: r.status, body: await r.json().catch(() => null) };
 }
 
@@ -96,7 +96,8 @@ async function settle(label) {
 
   console.log('\nOrganizer: move "Inside the kube-scheduler framework" (room 250) to hall-a');
   const t1 = Date.now();
-  const sw = await call('POST', '/api/swap', { a: '250', b: 'hall-a' }, org);
+  // The swap re-seats everyone in both rooms one by one (~40 ms each live): allow 2 min.
+  const sw = await call('POST', '/api/swap', { a: '250', b: 'hall-a' }, org, 120000);
   console.log(`  swap: ${sw.status} ${JSON.stringify(sw.body)} in ${((Date.now() - t1) / 1000).toFixed(1)} s`);
   if (sw.status !== 200 || !(sw.body?.reseated > 0)) throw new Error(`FAIL: swap did not happen (${sw.status})`);
   const after = await settle('After the swap');
