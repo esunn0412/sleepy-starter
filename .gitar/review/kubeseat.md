@@ -21,7 +21,7 @@ Flag any change that breaks these rules.
 - Credentials come from the `app-credentials` Kubernetes Secret, through environment variables.
 
 ## Kubernetes manifests
-- Every container sets CPU and memory requests and limits. The cluster budget is 2 CPU / 4 GiB of requests in total.
+- Every container in app manifests deployed to the team cluster (`deploy/`) sets CPU and memory requests and limits. The cluster budget is 2 CPU / 4 GiB of requests in total. Attendee Pods in the KWOK seat cluster are exempt: they request only `conf.io/seat`, so the scheduler weighs seats and nothing else.
 - Keep Service `app` on port 80, and keep the `/healthz` and `/readyz` endpoints.
 - No privileged containers, hostPath, hostNetwork or hostPID.
 - Don't apply or patch app manifests on the cluster directly; Argo CD deploys from `main`.

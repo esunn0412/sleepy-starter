@@ -79,7 +79,7 @@ The scheduler only binds; nothing runs. KWOK marks pods Running without containe
 - **Slides**: index slide PDF text via the attachment processor when available (many are uploaded after the talk).
 - Scope for today: bio + GitHub username + resume/LinkedIn PDF; slides only for the demo slot. Sign-in flows are first to cut.
 
-## Feasibility spike (done, branch `feasibility-spike`, folder `spike/`)
+## Feasibility spike (done, folder `spike/` on `main`)
 
 Ran the stock kube-scheduler v1.34.1 in-process against client-go's fake clientset; 16/16 checks pass:
 interests become seat choices; seats are a hard cap; must-see + full room -> Pending with "Insufficient conf.io/seat";
@@ -90,7 +90,9 @@ Design findings: steer access needs into the pool (else they take a general seat
 so the app controls fairness via submission order; flag people whose needs no picked room meets (else seated anywhere);
 translate raw Pending text into "Room full" / "No step-free room for this talk".
 
-Not yet tested: a real kube-apiserver + KWOK, and running inside the hackathon cluster.
+Since confirmed (2026-11-09): the seat cluster (`deploy/seats.yaml`, kwok/cluster image) runs inside the team
+vcluster and the live app seats attendees through it. It runs no kube-controller-manager, so the app creates the
+`default` ServiceAccount and clears the `node.kubernetes.io/not-ready` taint on room Nodes itself.
 
 ## Hackathon cluster facts (Radar starter: github.com/skyhook-io/cnh-starter)
 
@@ -143,5 +145,5 @@ decisions were already solved by the scheduler; we pointed it at people."
 ## Open questions
 
 - Exact coding start; AI assistants allowed; Elastic Cloud OK for the Elastic track.
-- Can a pod in our vcluster run its own apiserver + scheduler (the KWOK spike)?
+- ~~Can a pod in our vcluster run its own apiserver + scheduler (the KWOK spike)?~~ Yes: live since PR #2.
 - Which sections LinkedIn's Save-to-PDF actually includes (test with a real profile).

@@ -1,7 +1,7 @@
 # kubeseat feasibility spike
 
 **Status: throwaway prep work, written before the hackathon's coding window. Not the submission.**
-It lives on the `feasibility-spike` branch so `main` stays empty until build time.
+It lives in `spike/` on `main` as reference; the app in `app/` is the submission.
 
 ## The question
 
@@ -22,7 +22,7 @@ added) in-process against an in-memory Kubernetes API (client-go's fake clientse
 | Needs step-free access | Required node affinity on `access.conf.io/step-free=true` |
 | Accessible-seat pool | Tainted node + toleration + preferred affinity to steer into it |
 | Friends | Preferred pod affinity on the same `kubernetes.io/hostname` |
-| Overflow room | Adding a Node |
+| More capacity (spike-only test) | Adding a Node; the app has no overflow room, organizers change capacity or swap rooms |
 
 The only emulation: the fake API doesn't persist Bindings, so a small reactor sets
 `spec.nodeName` when the scheduler binds, as the real API server would.
