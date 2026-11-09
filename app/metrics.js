@@ -65,15 +65,27 @@ const measuringSince = Date.now() - 1000;
 
 // Every second: record time-to-seat for newly seated attendees, exactly once across
 // app replicas (the replica whose label write wins records it).
+let stopped = false;
+let seatTimer = null;
+let inFlight = Promise.resolve();
+
 async function pollSeated() {
-  try {
-    await seats.claimNewlySeated((s) => {
-      timeToSeat.record(s.seconds, { 'kubeseat.room': s.room, 'kubeseat.pool': s.pool, 'kubeseat.must_see': s.mustSee });
-    }, measuringSince);
-  } catch (e) {
+  if (stopped) return;
+  inFlight = seats.claimNewlySeated((s) => {
+    timeToSeat.record(s.seconds, { 'kubeseat.room': s.room, 'kubeseat.pool': s.pool, 'kubeseat.must_see': s.mustSee });
+  }, measuringSince).catch((e) => {
     if (!e.upstream && !e.name?.includes('Timeout')) console.log(`metrics: ${e.message}`);
-  }
-  setTimeout(pollSeated, 1000);
+  });
+  await inFlight;
+  if (!stopped) seatTimer = setTimeout(pollSeated, 1000);
+}
+
+// On shutdown: stop claiming and let the current pass finish, so every claimed
+// sample is recorded before the SDK's final export.
+async function stop() {
+  stopped = true;
+  clearTimeout(seatTimer);
+  await inFlight;
 }
 
 async function pollStats() {
@@ -91,4 +103,4 @@ function start() {
   pollStats();
 }
 
-module.exports = { start, recordRequest, recordRelease };
+module.exports = { start, stop, recordRequest, recordRelease };

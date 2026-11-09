@@ -196,6 +196,7 @@ server.listen(port, () => {
 // Flush the last telemetry batch first (telemetry.js is already loaded via --require;
 // this returns the same module).
 process.on('SIGTERM', () => server.close(async () => {
+  await metrics.stop();
   await require('./telemetry').shutdown();
   process.exit(0);
 }));
