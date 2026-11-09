@@ -14,7 +14,7 @@ const PROJECTS = ['Kubernetes', 'Argo CD', 'Argo', 'Backstage', 'Cilium', 'eBPF'
   'Wazuh', 'GPU', 'DRA', 'MCP', 'LLM'];
 
 function projectsIn(text) {
-  return PROJECTS.filter((p) => new RegExp(`(^|[^A-Za-z])${p.replace(/ /g, '\\s+')}([^A-Za-z]|$)`, 'i').test(text));
+  return PROJECTS.filter((p) => new RegExp(`(^|[^A-Za-z])${p.replace(/ /g, '\\s*')}([^A-Za-z]|$)`, 'i').test(text));
 }
 
 const slot = data.slot;
