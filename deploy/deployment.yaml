@@ -25,6 +25,16 @@ spec:
           env:
             - name: TEAM_NAME
               value: "sleepy"
+            - name: SEATS_URL
+              value: "http://seats:8080"
+            # From the app-credentials Secret (created in Radar, never in git).
+            # Optional: without it the organizer controls stay disabled.
+            - name: ORGANIZER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: app-credentials
+                  key: organizer-token
+                  optional: true
           resources:
             requests:
               cpu: 100m
