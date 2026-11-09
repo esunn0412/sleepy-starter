@@ -64,8 +64,8 @@ reason ("Room full, you're #4 on the waitlist"), access needs are guaranteed, an
 | Item | Status | Evidence |
 | --- | --- | --- |
 | Custom rules in `.gitar/review/kubeseat.md` (seat model, privacy, secrets, budget) | 🟨 | PR #1 |
-| Every feature lands through a Gitar-reviewed PR | 🟨 | PR #1, #2 |
-| A Gitar comment that caught something real (and the fix) | ⬜ | |
+| Every feature lands through a Gitar-reviewed PR | 🟨 | PR #1, #2, #3, #4 |
+| A Gitar comment that caught something real (and the fix) | ✅ | PR #2: seat apiserver is unauthenticated HTTP reachable cluster-wide → added NetworkPolicy (commit `51befc9`), Gitar re-reviewed: Approved |
 | CI failure diagnosis / auto-apply used once | ⬜ | |
 
 **Demo moment:** PR list + one comment where a kubeseat rule caught a violation.
@@ -76,9 +76,10 @@ reason ("Room full, you're #4 on the waitlist"), access needs are guaranteed, an
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| Access needs (step-free, captions, low-sensory) as REQUIRED affinity | ⬜ | (proven in `spike/`) |
-| Protected accessible-seat pool (tainted node per room) | ⬜ | (proven in `spike/`) |
-| Plain-English reasons instead of raw scheduler text | ⬜ | |
+| Access needs (step-free, captions, low-sensory) as REQUIRED affinity | 🟨 | PR #4 (step-free, captions); tested locally |
+| Protected accessible-seat pool (tainted node per room) | 🟨 | PR #4; tested: full room, pool untouched, holder still seated |
+| Plain-English reasons instead of raw scheduler text | 🟨 | PR #4: "Room full: you are on the waitlist…", waitlist # |
+| Accessible UI (labels, aria-live seat updates) | 🟨 | PR #4 |
 | First-timer / beginner level fit | ⬜ | |
 
 **Demo moment:** popular room fills, yet the accessible seats stay held for people who need them.
@@ -89,6 +90,10 @@ reason ("Room full, you're #4 on the waitlist"), access needs are guaranteed, an
 
 Time is America/Denver. One line each: what, where to see it.
 
+- 13:24 · PR #4 opened: app seats attendees via the real scheduler; 9/9 end-to-end checks pass on a local kwokctl cluster · github.com/esunn0412/sleepy-starter/pull/4
+- 13:22 · Gitar approved PR #2 after the fix
+- 13:18 · **Gitar caught a real issue** on PR #2 (unauthenticated seat apiserver, no NetworkPolicy) → fixed in `51befc9`
+- 13:15 · Screenshot: Radar Checks before (4 medium) taken
 - 13:15 · PR #2 opened: seat cluster (KWOK in one pod) · github.com/esunn0412/sleepy-starter/pull/2
 - 13:07 · Radar Checks "before" recorded: 4 medium findings · `STORY.md`
 - 13:06 · Argo CD Application `app` created via Radar MCP; app live at `1ee2e69` · https://sleepy.cnh.radarhq.io
@@ -96,10 +101,10 @@ Time is America/Denver. One line each: what, where to see it.
 
 ## Screenshots to take
 
-- [ ] Radar Checks before (now) · https://app.radarhq.io/checks?scope=Ft5rnMvHlHw&namespace=team-sleepy
+- [x] Radar Checks before (taken 13:15) · https://app.radarhq.io/checks?scope=Ft5rnMvHlHw&namespace=team-sleepy
 - [ ] Radar topology with app + seats
 - [ ] Radar AI investigation result
 - [ ] Radar Checks after
 - [ ] Dash0 dashboard + SLO
-- [ ] Gitar PR comment
+- [ ] Gitar PR comment: PR #2 NetworkPolicy finding + "Approved" after the fix
 - [ ] Organizer view: room full + Pending reasons, then draining after the swap
