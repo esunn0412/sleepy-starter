@@ -9,6 +9,8 @@ const { attendeePage, organizerPage } = require('./pages');
 
 const port = Number(process.env.PORT || 8080);
 const version = process.env.APP_VERSION || 'dev';
+// Organizer key from the app-credentials Secret. Unset = organizer controls disabled.
+const organizerKey = process.env.ORGANIZER_TOKEN || '';
 const talkIds = new Set(talks.map((t) => t.id));
 const roomIds = new Set(rooms.map((r) => r.id));
 
@@ -46,6 +48,37 @@ function readJson(req) {
   });
 }
 
+function sameSecret(given) {
+  if (!organizerKey || !given) return false;
+  const a = crypto.createHash('sha256').update(given).digest();
+  const b = crypto.createHash('sha256').update(organizerKey).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+function cookie(req, name) {
+  for (const part of (req.headers.cookie || '').split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === name) return decodeURIComponent(v.join('='));
+  }
+  return '';
+}
+
+const isOrganizer = (req) => sameSecret(cookie(req, 'kubeseat_org') || req.headers['x-organizer-token']);
+
+const loginPage = (msg) => `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>kubeseat organizer</title><body style="font:16px system-ui;max-width:420px;margin:48px auto;padding:0 16px">
+<h1>Organizer sign-in</h1><p>${msg}</p><form method="post" action="/organizer/login">
+<label>Organizer key <input type="password" name="key" autocomplete="current-password" required></label> <button>Sign in</button></form></body></html>`;
+
+function readForm(req) {
+  return new Promise((resolve) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (c) => { size += c.length; if (size <= 4096) chunks.push(c); });
+    req.on('end', () => resolve(new URLSearchParams(Buffer.concat(chunks).toString())));
+  });
+}
+
 // Accept only known talks and integer weights 1-100.
 function parsePrefs(body) {
   const interests = (Array.isArray(body.interests) ? body.interests : [])
@@ -61,7 +94,22 @@ async function route(req, res, url) {
   const p = url.pathname;
   if (p === '/healthz' || p === '/readyz') return send(res, 200, 'ok\n', 'text/plain');
   if (p === '/' && req.method === 'GET') return send(res, 200, attendeePage({ version, slot, talks }), 'text/html; charset=utf-8');
-  if (p === '/organizer' && req.method === 'GET') return send(res, 200, organizerPage({ version, slot, talks }), 'text/html; charset=utf-8');
+  if (p === '/organizer/login' && req.method === 'POST') {
+    const key = (await readForm(req)).get('key') || '';
+    if (!sameSecret(key)) return send(res, 401, loginPage(organizerKey ? 'Wrong key.' : 'Organizer controls are not configured.'), 'text/html; charset=utf-8');
+    res.writeHead(303, {
+      location: '/organizer',
+      'set-cookie': `kubeseat_org=${encodeURIComponent(key)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=43200`,
+    });
+    return res.end();
+  }
+  if (p === '/organizer' && req.method === 'GET') {
+    if (!isOrganizer(req)) return send(res, 200, loginPage('Enter the organizer key to manage rooms.'), 'text/html; charset=utf-8');
+    return send(res, 200, organizerPage({ version, slot, talks }), 'text/html; charset=utf-8');
+  }
+  // Everything below that changes rooms is organizer-only.
+  const organizerWrite = req.method === 'POST' && (p === '/api/swap' || /^\/api\/rooms\//.test(p));
+  if (organizerWrite && !isOrganizer(req)) return send(res, 401, { error: 'organizer sign-in required' });
   if (p === '/api/talks') return send(res, 200, { version, slot, talks });
 
   if (p === '/api/attendees' && req.method === 'POST') {
@@ -93,8 +141,8 @@ async function route(req, res, url) {
   if (p === '/api/swap' && req.method === 'POST') {
     const { a, b } = await readJson(req);
     if (!roomIds.has(a) || !roomIds.has(b) || a === b) return send(res, 400, { error: 'pick two different rooms' });
-    await seats.swapTalks(a, b);
-    return send(res, 200, { swapped: [a, b] });
+    const { reseated } = await seats.swapTalks(a, b);
+    return send(res, 200, { swapped: [a, b], reseated });
   }
   return send(res, 404, 'not found\n', 'text/plain');
 }

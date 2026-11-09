@@ -81,20 +81,47 @@ async function setSeats(roomId, pool, seats) {
 }
 
 // Swap the talks in two rooms (e.g. move a packed talk to a bigger room).
-// Waitlisted Pods whose must-see talk now has free seats get seated by the scheduler.
+// Node affinity is IgnoredDuringExecution, so relabelling alone would leave people
+// seated in the room their talk just left (and could put a step-free need in a room
+// without step-free access). So everyone seated in either room is re-queued, earliest
+// request first, and the scheduler seats them again against the new labels.
+// Waitlisted Pods whose must-see talk now has free seats get seated too.
 async function swapTalks(roomA, roomB) {
   const nodes = (await api('GET', '/api/v1/nodes?labelSelector=conf.io/room')).items;
   const talkOf = (id) => nodes.find((n) => n.metadata.labels['conf.io/room'] === id)?.metadata.labels['conf.io/talk'];
   const a = talkOf(roomA);
   const b = talkOf(roomB);
   if (!a || !b) throw Object.assign(new Error('unknown room'), { status: 404 });
+  const swapped = new Set();
   for (const n of nodes) {
     const room = n.metadata.labels['conf.io/room'];
     if (room !== roomA && room !== roomB) continue;
+    swapped.add(n.metadata.name);
     await api('PATCH', `/api/v1/nodes/${n.metadata.name}`,
       { metadata: { labels: { 'conf.io/talk': room === roomA ? b : a } } },
       'application/merge-patch+json');
   }
+
+  const seated = (await api('GET', `/api/v1/namespaces/${NS}/pods`)).items
+    .filter((p) => swapped.has(p.spec.nodeName))
+    .sort((x, y) => requestedAt(x).localeCompare(requestedAt(y)));
+  for (const p of seated) {
+    await api('DELETE', `/api/v1/namespaces/${NS}/pods/${p.metadata.name}?gracePeriodSeconds=0`);
+    const { nodeName, ...spec } = p.spec;
+    await api('POST', `/api/v1/namespaces/${NS}/pods`, {
+      apiVersion: 'v1',
+      kind: 'Pod',
+      metadata: { name: p.metadata.name, labels: p.metadata.labels, annotations: p.metadata.annotations },
+      spec,
+    });
+  }
+  console.log(`talks swapped rooms=${roomA},${roomB} reseated=${seated.length}`);
+  return { reseated: seated.length };
+}
+
+// creationTimestamp is per-second; the request annotation has milliseconds.
+function requestedAt(p) {
+  return p.metadata.annotations?.['conf.io/requested-at'] || p.metadata.creationTimestamp;
 }
 
 // --- Attendees (Pods) -------------------------------------------------------
@@ -198,9 +225,7 @@ async function seatStatus(id) {
   const mustSee = pod.metadata.labels['conf.io/must-see'];
   if (mustSee) {
     const waiting = (await api('GET', `/api/v1/namespaces/${NS}/pods?labelSelector=conf.io/must-see=${encodeURIComponent(mustSee)}&fieldSelector=spec.nodeName=`)).items;
-    // creationTimestamp is per-second; the request annotation has milliseconds.
-    const at = (p) => p.metadata.annotations?.['conf.io/requested-at'] || p.metadata.creationTimestamp;
-    waiting.sort((a, b) => at(a).localeCompare(at(b)));
+    waiting.sort((a, b) => requestedAt(a).localeCompare(requestedAt(b)));
     out.waitlistPosition = waiting.findIndex((p) => p.metadata.name === pod.metadata.name) + 1;
   }
   return out;
