@@ -49,6 +49,20 @@ spec:
                   name: app-credentials
                   key: dash0-auth-token
                   optional: true
+            # Elasticsearch (talk index + hybrid scoring). Optional: without it,
+            # attendees set their interests by hand.
+            - name: ELASTIC_URL
+              valueFrom:
+                secretKeyRef:
+                  name: app-credentials
+                  key: elastic-url
+                  optional: true
+            - name: ELASTIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-credentials
+                  key: elastic-api-key
+                  optional: true
             - name: POD_NAME
               valueFrom:
                 fieldRef:

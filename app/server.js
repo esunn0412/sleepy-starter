@@ -8,6 +8,9 @@ const seats = require('./seats');
 const metrics = require('./metrics');
 const { slot, talks, rooms } = require('./slot');
 const { attendeePage, organizerPage } = require('./pages');
+const elastic = require('./elastic');
+const { githubProfileText } = require('./github');
+const { toYaml } = require('./yaml');
 
 const port = Number(process.env.PORT || 8080);
 const version = process.env.APP_VERSION || 'dev';
@@ -113,7 +116,7 @@ async function route(req, res, url) {
     if (id) span.setAttribute('kubeseat.attendee.id', id[1]);
   }
   if (p === '/healthz' || p === '/readyz') return send(res, 200, 'ok\n', 'text/plain');
-  if (p === '/' && req.method === 'GET') return send(res, 200, attendeePage({ version, slot, talks }), 'text/html; charset=utf-8');
+  if (p === '/' && req.method === 'GET') return send(res, 200, attendeePage({ version, slot, talks, scoring: elastic.enabled() }), 'text/html; charset=utf-8');
   if (p === '/organizer/login' && req.method === 'POST') {
     const key = (await readForm(req)).get('key') || '';
     if (!sameSecret(key)) return send(res, 401, loginPage(organizerKey ? 'Wrong key.' : 'Organizer controls are not configured.'), 'text/html; charset=utf-8');
@@ -130,7 +133,22 @@ async function route(req, res, url) {
   // Everything below that changes rooms is organizer-only.
   const organizerWrite = req.method === 'POST' && (p === '/api/swap' || /^\/api\/rooms\//.test(p));
   if (organizerWrite && !isOrganizer(req)) return send(res, 401, { error: 'organizer sign-in required' });
-  if (p === '/api/talks') return send(res, 200, { version, slot, talks });
+  if (p === '/api/talks') return send(res, 200, { version, slot, talks, scoring: elastic.enabled() });
+
+  // Score this person against the slot's talks with Elasticsearch. The profile text is
+  // used for this query only: never stored, indexed or logged.
+  if (p === '/api/score' && req.method === 'POST') {
+    if (!elastic.enabled()) return send(res, 503, { error: 'scoring unavailable' });
+    const body = await readJson(req);
+    const level = ['Beginner', 'Intermediate', 'Advanced'].includes(body.level) ? body.level : 'Intermediate';
+    const bio = String(body.bio || '').slice(0, 2000);
+    const gh = body.github ? await githubProfileText(String(body.github)).catch(() => '') : '';
+    const text = [bio, gh].filter(Boolean).join('. ');
+    if (!text.trim()) return send(res, 400, { error: 'tell us a little about yourself, or a GitHub username' });
+    span?.setAttribute('kubeseat.profile.github_used', !!gh);
+    const scores = await elastic.scoreTalks(slot.id, text, level);
+    return send(res, 200, { level, githubUsed: !!gh, scores });
+  }
 
   if (p === '/api/attendees' && req.method === 'POST') {
     const prefs = parsePrefs(await readJson(req));
@@ -140,7 +158,13 @@ async function route(req, res, url) {
     metrics.recordRequest(prefs);
     return send(res, 201, { id });
   }
-  let m = p.match(/^\/api\/attendees\/([0-9a-f]{10})$/);
+  // The Pod the scheduler actually got, as YAML (demo: "this is you, as a Pod").
+  let m = p.match(/^\/api\/attendees\/([0-9a-f]{10})\/pod$/);
+  if (m && req.method === 'GET') {
+    const pod = await seats.getPod(m[1]);
+    return pod ? send(res, 200, toYaml(pod), 'text/plain; charset=utf-8') : send(res, 404, { error: 'not found' });
+  }
+  m = p.match(/^\/api\/attendees\/([0-9a-f]{10})$/);
   if (m && req.method === 'GET') {
     const s = await seats.seatStatus(m[1]);
     return s ? send(res, 200, s) : send(res, 404, { error: 'not found' });

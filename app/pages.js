@@ -27,10 +27,23 @@ function layout(title, body, version) {
 <footer>kubeseat · the real kube-scheduler seats you · version ${esc(version)}</footer></main></body></html>`;
 }
 
-function attendeePage({ version, slot, talks }) {
+function attendeePage({ version, slot, talks, scoring }) {
+  const about = scoring ? `
+  <fieldset><legend>1. About you</legend>
+    <p class="meta">Elasticsearch matches you to talks by meaning and by exact names (eBPF, Cilium, OpenTelemetry…).
+      We use this once to score talks; we don't store it.</p>
+    <label for="bio">What are you working on, or want to learn?</label>
+    <textarea id="bio" name="bio" rows="3" style="width:100%;font:inherit" placeholder="e.g. I run Node.js services and want to add tracing"></textarea>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
+      <label>GitHub username (optional) <input name="github" autocomplete="off" style="width:12em"></label>
+      <label>Your level <select name="level"><option>Beginner</option><option selected>Intermediate</option><option>Advanced</option></select></label>
+    </div>
+    <p><button type="button" id="score" class="secondary">Score my talks</button> <span id="scoreMsg" class="meta" aria-live="polite"></span></p>
+  </fieldset>` : '';
   const rows = talks.map((t) => `
     <div class="talk">
-      <div><strong>${esc(t.title)}</strong><div class="meta">${esc(t.track)} · ${esc(t.level)}</div></div>
+      <div><strong>${esc(t.title)}</strong><div class="meta">${esc(t.track)} · ${esc(t.level)}</div>
+        <div class="why meta" id="why-${esc(t.id)}" aria-live="polite"></div></div>
       <div>
         <label>Interest <input type="range" min="0" max="100" value="0" name="w-${esc(t.id)}" aria-label="Interest in ${esc(t.title)}"></label>
         <label><input type="radio" name="mustSee" value="${esc(t.id)}"> Must see</label>
@@ -38,8 +51,8 @@ function attendeePage({ version, slot, talks }) {
     </div>`).join('');
   const body = `
 <h1>kubeseat</h1><p class="sub">Pick what you want to see at ${esc(when(slot.startsAt))}. The Kubernetes scheduler finds you a seat.</p>
-<form id="f">
-  <fieldset><legend>Talks this slot</legend>${rows}
+<form id="f">${about}
+  <fieldset><legend>${scoring ? '2. ' : ''}Talks this slot</legend>${rows}
     <div class="talk"><div class="meta">No must-see</div><div><label><input type="radio" name="mustSee" value="" checked> None</label></div></div>
   </fieldset>
   <fieldset><legend>Access needs (always honored)</legend>
@@ -53,7 +66,23 @@ function attendeePage({ version, slot, talks }) {
 <script>
 const talks = ${JSON.stringify(Object.fromEntries(talks.map((t) => [t.id, t.title])))};
 const f = document.getElementById('f'), out = document.getElementById('seat');
-let id = null, timer = null;
+let id = null, timer = null, podOpen = false;
+const scoreBtn = document.getElementById('score');
+if (scoreBtn) scoreBtn.onclick = async () => {
+  const d = new FormData(f), msg = document.getElementById('scoreMsg');
+  msg.textContent = 'Scoring…';
+  const r = await fetch('/api/score', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ bio: d.get('bio'), github: d.get('github'), level: d.get('level') }) });
+  const s = await r.json().catch(() => ({}));
+  if (!r.ok) { msg.textContent = s.error || 'Scoring is unavailable; set your interests by hand.'; return; }
+  for (const x of s.scores) {
+    const slider = f.querySelector('[name="w-' + x.talk + '"]');
+    if (slider) slider.value = x.weight;
+    const why = document.getElementById('why-' + x.talk);
+    if (why) why.textContent = (x.weight ? 'Weight ' + x.weight + ': ' : 'Not in your top 3: ') + x.why;
+  }
+  msg.textContent = 'Done. These weights go into your Pod. Adjust them if you like.' + (s.githubUsed ? ' (GitHub repos included.)' : '');
+};
 f.addEventListener('submit', async (e) => {
   e.preventDefault();
   const d = new FormData(f);
@@ -79,6 +108,12 @@ async function poll() {
       (s.waitlistPosition ? '<p>Waitlist position: #' + s.waitlistPosition + '</p>' : '') + '<button class="secondary" id="cancel">Leave the waitlist</button>';
     timer = setTimeout(poll, 2000);
   }
+  const podBox = document.createElement('details');
+  podBox.innerHTML = '<summary>Show me as a Pod</summary><pre style="overflow:auto;font-size:13px"></pre>';
+  const showPod = async () => { podBox.querySelector('pre').textContent = await (await fetch('/api/attendees/' + id + '/pod')).text(); };
+  podBox.ontoggle = () => { podOpen = podBox.open; if (podOpen) showPod(); };
+  out.appendChild(podBox);
+  if (podOpen) { podBox.open = true; showPod(); }
   document.getElementById('cancel').onclick = async () => {
     await fetch('/api/attendees/' + id, { method: 'DELETE' }); clearTimeout(timer); id = null;
     out.textContent = 'Seat released. It goes to the next person on the waitlist.';

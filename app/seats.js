@@ -308,4 +308,32 @@ async function claimNewlySeated(onSeated, since = 0) {
   }
 }
 
-module.exports = { claimNewlySeated, ensureRooms, setSeats, swapTalks, requestSeat, cancelSeat, seatStatus, roomStats, attendeePod };
+// The attendee's Pod, trimmed to what explains the seat: request, affinity, result.
+async function getPod(id) {
+  let p;
+  try {
+    p = await api('GET', `/api/v1/namespaces/${NS}/pods/a-${id}`);
+  } catch (e) {
+    if (e.status === 404) return null;
+    throw e;
+  }
+  const sched = (p.status?.conditions || []).find((c) => c.type === 'PodScheduled');
+  return {
+    apiVersion: 'v1',
+    kind: 'Pod',
+    metadata: { name: p.metadata.name, labels: p.metadata.labels },
+    spec: {
+      schedulerName: p.spec.schedulerName,
+      ...(p.spec.nodeName ? { nodeName: p.spec.nodeName } : {}),
+      affinity: p.spec.affinity,
+      tolerations: (p.spec.tolerations || []).filter((t) => t.key?.startsWith('conf.io/')),
+      containers: p.spec.containers.map((c) => ({ name: c.name, resources: c.resources })),
+    },
+    status: {
+      phase: p.status?.phase,
+      ...(sched ? { conditions: [{ type: 'PodScheduled', status: sched.status, ...(sched.reason ? { reason: sched.reason } : {}), ...(sched.message ? { message: sched.message } : {}) }] } : {}),
+    },
+  };
+}
+
+module.exports = { getPod, claimNewlySeated, ensureRooms, setSeats, swapTalks, requestSeat, cancelSeat, seatStatus, roomStats, attendeePod };
