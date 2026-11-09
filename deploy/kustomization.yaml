@@ -9,6 +9,7 @@ resources:
   - service.yaml
   - httproute.yaml
   - seats.yaml
+  - pdb.yaml
 images:
   - name: app
     newName: ghcr.io/esunn0412/sleepy-starter

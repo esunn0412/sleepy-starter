@@ -21,6 +21,8 @@ spec:
       labels:
         app: seats
     spec:
+      # A self-contained control plane: it never calls the team cluster's API.
+      automountServiceAccountToken: false
       containers:
         - name: seats
           image: registry.k8s.io/kwok/cluster:v0.8.0-k8s.v1.34.8
@@ -43,6 +45,13 @@ spec:
             tcpSocket:
               port: kube-api
             periodSeconds: 10
+          # Restart the control plane if its apiserver stops answering; the app
+          # re-seeds the rooms within 30 s.
+          livenessProbe:
+            tcpSocket:
+              port: kube-api
+            periodSeconds: 20
+            failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false
             seccompProfile:
