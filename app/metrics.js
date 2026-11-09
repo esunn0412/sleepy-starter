@@ -12,6 +12,7 @@
 
 const { metrics } = require('@opentelemetry/api');
 const seats = require('./seats');
+const { untraced } = require('./untraced');
 
 const meter = metrics.getMeter('kubeseat');
 
@@ -71,9 +72,9 @@ let inFlight = Promise.resolve();
 
 async function pollSeated() {
   if (stopped) return;
-  inFlight = seats.claimNewlySeated((s) => {
+  inFlight = untraced(() => seats.claimNewlySeated((s) => {
     timeToSeat.record(s.seconds, { 'kubeseat.room': s.room, 'kubeseat.pool': s.pool, 'kubeseat.must_see': s.mustSee });
-  }, measuringSince).catch((e) => {
+  }, measuringSince)).catch((e) => {
     if (!e.upstream && !e.name?.includes('Timeout')) console.log(`metrics: ${e.message}`);
   });
   await inFlight;
@@ -90,7 +91,7 @@ async function stop() {
 
 async function pollStats() {
   try {
-    stats = await seats.roomStats();
+    stats = await untraced(() => seats.roomStats());
   } catch {
     // seat cluster restarting: keep the last values
   }

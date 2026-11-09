@@ -12,18 +12,20 @@ module.exports.shutdown = async () => {};
 const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || '';
 if (endpoint.startsWith('http')) {
   const { NodeSDK } = require('@opentelemetry/sdk-node');
-  const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-proto');
   const { OTLPMetricExporter } = require('@opentelemetry/exporter-metrics-otlp-proto');
   const { PeriodicExportingMetricReader } = require('@opentelemetry/sdk-metrics');
   const { HttpInstrumentation } = require('@opentelemetry/instrumentation-http');
   const { UndiciInstrumentation } = require('@opentelemetry/instrumentation-undici');
 
   const sdk = new NodeSDK({
-    traceExporter: new OTLPTraceExporter(),
-    metricReader: new PeriodicExportingMetricReader({
+    // Traces: OTLP/HTTP from the OTEL_* env (the SDK default).
+    // Metrics every 10 s, so seat changes show up in Dash0 quickly. This SDK takes
+    // `metricReaders` (plural); the old singular `metricReader` is silently ignored,
+    // which left us on the 60 s default.
+    metricReaders: [new PeriodicExportingMetricReader({
       exporter: new OTLPMetricExporter(),
       exportIntervalMillis: 10000,
-    }),
+    })],
     instrumentations: [
       // Incoming requests; probes are noise.
       new HttpInstrumentation({

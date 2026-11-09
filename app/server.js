@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const { trace } = require('@opentelemetry/api');
 const seats = require('./seats');
 const metrics = require('./metrics');
+const { untraced } = require('./untraced');
 const { slot, talks, rooms } = require('./slot');
 const { attendeePage, organizerPage } = require('./pages');
 const elastic = require('./elastic');
@@ -25,7 +26,7 @@ const roomIds = new Set(rooms.map((r) => r.id));
 let seeded = false;
 async function seed() {
   try {
-    await seats.ensureRooms(rooms);
+    await untraced(() => seats.ensureRooms(rooms));
     if (!seeded) console.log(`seat cluster seeded: ${rooms.length} rooms`);
     seeded = true;
     setTimeout(seed, 30000);
