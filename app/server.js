@@ -15,13 +15,17 @@ const talkIds = new Set(talks.map((t) => t.id));
 const roomIds = new Set(rooms.map((r) => r.id));
 
 // Create the rooms in the seat cluster; retry until it is up (it can start after us).
+// Re-check every 30 s: the seat cluster keeps no state across restarts, and creating
+// what already exists is a no-op (409), so edits like capacity changes survive.
 let seeded = false;
 async function seed() {
   try {
     await seats.ensureRooms(rooms);
+    if (!seeded) console.log(`seat cluster seeded: ${rooms.length} rooms`);
     seeded = true;
-    console.log(`seat cluster seeded: ${rooms.length} rooms`);
+    setTimeout(seed, 30000);
   } catch (e) {
+    seeded = false;
     console.log(`seat cluster not ready, retrying: ${e.message}`);
     setTimeout(seed, 3000);
   }
@@ -157,7 +161,7 @@ const server = http.createServer(async (req, res) => {
   try {
     await route(req, res, url);
   } catch (e) {
-    const status = e.status && e.status < 500 ? e.status : 502;
+    const status = e.status && e.status < 500 && !e.upstream ? e.status : 502;
     console.log(`error ${req.method} ${url.pathname}: ${e.message}`);
     if (!res.headersSent) send(res, status, { error: status === 502 ? 'seat cluster unavailable' : e.message });
   }
